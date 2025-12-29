@@ -1,6 +1,10 @@
 # llm/llm_config.py
+import os
+from dotenv import load_dotenv
 
-LLM_PROVIDER = "deepseek"  # gemini | deepseek | ollama | vllm
+load_dotenv()
+
+LLM_PROVIDER = "gemini"  # gemini | deepseek | ollama | vllm
 
 # Shared config
 TEMPERATURE = 0.2
@@ -18,6 +22,5 @@ DEEPSEEK_MODEL = "deepseek-chat"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 # vLLM / OpenAI-compatible endpoint
-VLLM_BASE_URL = "http://YOUR_SERVER_IP:8000/v1"
 VLLM_API_KEY = "dummy"  # vLLM ignores this
 VLLM_MODEL = "Qwen/Qwen2.5-32B-Instruct"

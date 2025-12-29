@@ -126,8 +126,6 @@ def process_novel(novel_name: str) -> None:
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    print(llm.generate("Rewrite this sentence concisely: The cat was very very tired."))
-
     import sys
 
     if len(sys.argv) != 2:
