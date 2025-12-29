@@ -13,6 +13,10 @@ def create_llm():
         from llm.vllm_openai_llm import VLLMOpenAILLM
         return VLLMOpenAILLM()
 
+    if LLM_PROVIDER == "cerebras":
+        from llm.cerebras_llm import CerebrasLLM
+        return CerebrasLLM()
+
     if LLM_PROVIDER == "ollama":
         raise ValueError("Ollama is not implemented yet.")
 

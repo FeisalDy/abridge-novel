@@ -2,3 +2,6 @@ google-genai
 protobuf
 python-dotenv
 openai
+
+cerebras-cloud-sdk
+cerebras
