@@ -1,0 +1,34 @@
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE-specific files (VS Code, PyCharm, etc.)
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs and databases
+*.log
+*.sqlite
+db.sqlite3
+
+# Environment variables and sensitive data
+.env
+secret_key.py
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+data/raw/*
+data/chapters_condensed/*
+data/arch_condensed/*
+data/novel_condensed/*
