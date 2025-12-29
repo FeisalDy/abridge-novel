@@ -9,6 +9,10 @@ def create_llm():
         from llm.deepseek_llm import DeepSeekLLM
         return DeepSeekLLM()
 
+    if LLM_PROVIDER == "vllm":
+        from llm.vllm_openai_llm import VLLMOpenAILLM
+        return VLLMOpenAILLM()
+
     if LLM_PROVIDER == "ollama":
         raise ValueError("Ollama is not implemented yet.")
 
