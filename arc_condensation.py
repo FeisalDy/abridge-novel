@@ -2,6 +2,7 @@ import os
 from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
 from guardrails import record_condensation
+from cost_tracking import record_llm_usage
 
 # --------------------------------------------------
 # Configuration
@@ -20,22 +21,49 @@ CHAPTERS_PER_ARC = 10
 llm = create_llm()
 
 
-def run_llm(prompt: str) -> str:
-    return llm.generate(prompt)
+def run_llm(prompt: str, stage: str = "arc", unit_id: str = "") -> str:
+    """
+    Run the LLM and track usage.
+    
+    Uses generate_with_usage() to capture token counts from the API response.
+    Falls back to generate() if the LLM provider doesn't support usage tracking.
+    """
+    if hasattr(llm, 'generate_with_usage'):
+        response = llm.generate_with_usage(prompt)
+        
+        # COST TRACKING: Record the LLM call with actual token counts.
+        # This is observational only - does not modify output or block execution.
+        if response.input_tokens is not None and response.output_tokens is not None:
+            record_llm_usage(
+                model=response.model,
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                stage=stage,
+                unit_id=unit_id,
+            )
+        
+        return response.text
+    else:
+        # Fallback for LLM providers that don't support usage tracking
+        return llm.generate(prompt)
 
 
 # --------------------------------------------------
 # Core logic
 # --------------------------------------------------
 
-def condense_arc(text: str) -> str:
+def condense_arc(text: str, unit_id: str = "") -> str:
     """
     Apply the base condensation prompt to merged chapter text.
+    
+    Args:
+        text: The merged chapter text to condense
+        unit_id: Identifier for cost tracking (e.g., "arc_01")
     """
     prompt = BASE_CONDENSATION_PROMPT.format(
         INPUT_TEXT=text
     )
-    return run_llm(prompt)
+    return run_llm(prompt, stage="arc", unit_id=unit_id)
 
 
 def process_novel(novel_name: str) -> None:
@@ -79,11 +107,12 @@ def process_novel(novel_name: str) -> None:
 
         merged_text = "\n\n".join(merged_text_parts)
 
-        condensed_arc = condense_arc(merged_text)
+        # Construct unit_id before condensation for cost tracking
+        unit_id = f"arc_{arc_index:02d}"
+        condensed_arc = condense_arc(merged_text, unit_id=unit_id)
 
         # GUARDRAIL: Record compression ratio for this arc.
         # This is observational only - does not modify output or block execution.
-        unit_id = f"arc_{arc_index:02d}"
         record_condensation(
             input_text=merged_text,
             output_text=condensed_arc,

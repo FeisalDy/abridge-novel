@@ -3,6 +3,7 @@ from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
 from utils import reduce_until_fit
 from guardrails import record_condensation
+from cost_tracking import record_llm_usage
 
 # --------------------------------------------------
 # Configuration
@@ -19,26 +20,82 @@ NOVEL_CONDENSED_DIR = "data/novel_condensed"
 llm = create_llm()
 
 
-def run_llm(prompt: str) -> str:
-    return llm.generate(prompt)
+def run_llm(prompt: str, stage: str = "novel", unit_id: str = "") -> str:
+    """
+    Run the LLM and track usage.
+    
+    Uses generate_with_usage() to capture token counts from the API response.
+    Falls back to generate() if the LLM provider doesn't support usage tracking.
+    """
+    if hasattr(llm, 'generate_with_usage'):
+        response = llm.generate_with_usage(prompt)
+        
+        # COST TRACKING: Record the LLM call with actual token counts.
+        # This is observational only - does not modify output or block execution.
+        if response.input_tokens is not None and response.output_tokens is not None:
+            record_llm_usage(
+                model=response.model,
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                stage=stage,
+                unit_id=unit_id,
+            )
+        
+        return response.text
+    else:
+        # Fallback for LLM providers that don't support usage tracking
+        return llm.generate(prompt)
 
 
 # --------------------------------------------------
 # Core logic
 # --------------------------------------------------
 
-def condense_text(text: str) -> str:
+def condense_text(text: str, stage: str = "novel", unit_id: str = "") -> str:
     """
     Apply the base condensation prompt to any text.
     
     This is the atomic condensation operation used at all hierarchy levels.
     The same prompt is applied whether condensing arcs, super-arcs, or
     the final novel.
+    
+    Args:
+        text: The text to condense
+        stage: Pipeline stage for cost tracking (e.g., "arc", "super-arc")
+        unit_id: Identifier for cost tracking (e.g., "arc_group_01")
     """
     prompt = BASE_CONDENSATION_PROMPT.format(
         INPUT_TEXT=text
     )
-    return run_llm(prompt)
+    return run_llm(prompt, stage=stage, unit_id=unit_id)
+
+
+def make_condense_fn_with_tracking(stage: str):
+    """
+    Create a condense function closure that tracks cost.
+    
+    This is used by reduce_until_fit() which calls condense_fn(text) without
+    knowing about cost tracking. The closure captures the stage and generates
+    appropriate unit_ids.
+    
+    Args:
+        stage: Base stage name (e.g., "arc"). Will be updated by reduce_until_fit
+               as it creates intermediate layers (e.g., "super-arc").
+    
+    Returns:
+        A condense function compatible with reduce_until_fit's signature.
+    """
+    call_counter = [0]  # Mutable counter in closure
+    
+    def condense_fn(text: str) -> str:
+        call_counter[0] += 1
+        # Generate a unit_id based on call order
+        # The actual stage/unit_id for guardrails is handled separately
+        # This is just for cost tracking attribution
+        unit_id = f"reduce_call_{call_counter[0]:03d}"
+        return condense_text(text, stage=stage, unit_id=unit_id)
+    
+    return condense_fn
 
 
 # Legacy alias for backward compatibility
@@ -107,12 +164,16 @@ def process_novel(novel_name: str) -> None:
     # Directory structure: output_dir/arc/group_001.condensed.txt, etc.
     intermediate_dir = output_dir
 
+    # COST TRACKING: Create a condense function with tracking enabled.
+    # This closure captures cost tracking context for each LLM call made by reduce_until_fit.
+    condense_fn = make_condense_fn_with_tracking(stage="novel")
+
     # Use reduce_until_fit to handle arbitrary input sizes.
     # For small novels: behaves like original (single condensation pass).
     # For large novels: creates intermediate hierarchy layers as needed.
     condensed_novel = reduce_until_fit(
         units=arc_texts,
-        condense_fn=condense_text,
+        condense_fn=condense_fn,
         layer_name="arc",
         verbose=True,
         guardrail_callback=guardrail_callback,

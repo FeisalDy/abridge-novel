@@ -28,6 +28,7 @@ from chapter_condensation import process_novel as condense_chapters
 from arc_condensation import process_novel as condense_arcs
 from novel_condensation import process_novel as condense_novel
 from guardrails import start_run, end_run, print_run_summary
+from cost_tracking import print_usage_summary
 
 
 # --------------------------------------------------
@@ -291,6 +292,11 @@ def run_pipeline(
         # GUARDRAIL: Always print summary and end run, even if pipeline fails.
         # This ensures partial run data is still visible for debugging.
         print_run_summary(run_id)
+        
+        # COST TRACKING: Print LLM usage summary at end of run.
+        # Shows total tokens and estimated cost for this pipeline execution.
+        print_usage_summary(run_id)
+        
         end_run()
 
 
