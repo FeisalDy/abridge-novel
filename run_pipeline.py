@@ -44,6 +44,7 @@ from run_report import (
 from character_indexing import generate_character_index
 from character_salience import generate_salience_index
 from relationship_matrix import generate_relationship_matrix
+from event_keywords import generate_event_keyword_map
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -95,9 +96,10 @@ class SkipFlags:
     skip_novel: bool = False
     # Tier-2 feature: Character surface indexing (optional, explicitly invoked)
     character_index: bool = False
-    # Tier-3 features: Derived analysis (require upstream tier data)
+    # Tier-3 features: Derived analysis (require upstream tier data or condensed text)
     character_salience: bool = False
     relationship_matrix: bool = False
+    event_keywords: bool = False
 
 
 # --------------------------------------------------
@@ -264,12 +266,14 @@ def run_pipeline(
         print("  --character-index: Will generate character surface index")
     
     # Log Tier-3 features if enabled
-    if skip_flags.character_salience or skip_flags.relationship_matrix:
+    if skip_flags.character_salience or skip_flags.relationship_matrix or skip_flags.event_keywords:
         print("\nTier-3 features enabled:")
         if skip_flags.character_salience:
             print("  --character-salience: Will compute character salience scores")
         if skip_flags.relationship_matrix:
             print("  --relationship-matrix: Will compute character pair co-presence signals")
+        if skip_flags.event_keywords:
+            print("  --event-keywords: Will scan for event keyword signals")
 
     try:
         # --------------------------------------------------
@@ -405,6 +409,21 @@ def run_pipeline(
             # Requires Tier-2 and Tier-3.1 data; will fail gracefully if not available.
             generate_relationship_matrix(novel_name, run_id)
 
+        # --------------------------------------------------
+        # Tier-3.3 Feature: Event Keyword Surface Map (Optional)
+        # --------------------------------------------------
+        # EVENT KEYWORDS: Scan condensed text for predefined event-related keywords.
+        # This extracts LEXICAL SIGNALS showing where event terms appear.
+        # It does NOT confirm events occurred or assign narrative meaning.
+        # See event_keywords.py for dictionary documentation and consumer warnings.
+        if skip_flags.event_keywords:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.3: Event Keyword Surface Map")
+            print("=" * 50)
+            # NON-BLOCKING: Keyword scanning failures do not halt the pipeline.
+            # Operates directly on condensed chapters; no upstream tier dependencies.
+            generate_event_keyword_map(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -508,6 +527,12 @@ Examples:
         help="Compute character pair co-presence signals (Tier-3.2: derived from Tier-2 & Tier-3.1)",
     )
     
+    parser.add_argument(
+        "--event-keywords",
+        action="store_true",
+        help="Scan for event keyword signals (Tier-3.3: lexical surface map)",
+    )
+    
     return parser.parse_args()
 
 
@@ -521,6 +546,7 @@ if __name__ == "__main__":
         character_index=args.character_index,
         character_salience=args.character_salience,
         relationship_matrix=args.relationship_matrix,
+        event_keywords=args.event_keywords,
     )
     
     run_pipeline(args.novel_name, skip_flags)
