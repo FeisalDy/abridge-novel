@@ -43,6 +43,7 @@ from run_report import (
 )
 from character_indexing import generate_character_index
 from character_salience import generate_salience_index
+from relationship_matrix import generate_relationship_matrix
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -94,8 +95,9 @@ class SkipFlags:
     skip_novel: bool = False
     # Tier-2 feature: Character surface indexing (optional, explicitly invoked)
     character_index: bool = False
-    # Tier-3 feature: Character salience scoring (requires Tier-2 data)
+    # Tier-3 features: Derived analysis (require upstream tier data)
     character_salience: bool = False
+    relationship_matrix: bool = False
 
 
 # --------------------------------------------------
@@ -262,9 +264,12 @@ def run_pipeline(
         print("  --character-index: Will generate character surface index")
     
     # Log Tier-3 features if enabled
-    if skip_flags.character_salience:
+    if skip_flags.character_salience or skip_flags.relationship_matrix:
         print("\nTier-3 features enabled:")
-        print("  --character-salience: Will compute character salience scores")
+        if skip_flags.character_salience:
+            print("  --character-salience: Will compute character salience scores")
+        if skip_flags.relationship_matrix:
+            print("  --relationship-matrix: Will compute character pair co-presence signals")
 
     try:
         # --------------------------------------------------
@@ -385,6 +390,21 @@ def run_pipeline(
             # Requires Tier-2 data; will fail gracefully if not available.
             generate_salience_index(novel_name, run_id)
 
+        # --------------------------------------------------
+        # Tier-3.2 Feature: Relationship Signal Matrix (Optional)
+        # --------------------------------------------------
+        # RELATIONSHIP MATRIX: Compute structural co-presence signals between character pairs.
+        # This measures which characters PERSISTENTLY APPEAR TOGETHER across the narrative.
+        # It does NOT infer relationships, roles, or any semantic meaning.
+        # See relationship_matrix.py for signal definitions and consumer warnings.
+        if skip_flags.relationship_matrix:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.2: Relationship Signal Matrix")
+            print("=" * 50)
+            # NON-BLOCKING: Matrix computation failures do not halt the pipeline.
+            # Requires Tier-2 and Tier-3.1 data; will fail gracefully if not available.
+            generate_relationship_matrix(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -482,6 +502,12 @@ Examples:
         help="Compute character salience scores (Tier-3.1: derived from Tier-2)",
     )
     
+    parser.add_argument(
+        "--relationship-matrix",
+        action="store_true",
+        help="Compute character pair co-presence signals (Tier-3.2: derived from Tier-2 & Tier-3.1)",
+    )
+    
     return parser.parse_args()
 
 
@@ -494,6 +520,7 @@ if __name__ == "__main__":
         skip_novel=args.skip_novel,
         character_index=args.character_index,
         character_salience=args.character_salience,
+        relationship_matrix=args.relationship_matrix,
     )
     
     run_pipeline(args.novel_name, skip_flags)
