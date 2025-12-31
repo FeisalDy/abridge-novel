@@ -5,3 +5,4 @@ openai
 
 cerebras-cloud-sdk
 cerebras
+groq

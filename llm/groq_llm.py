@@ -1,21 +1,19 @@
 import os
-from cerebras.cloud.sdk import Cerebras
+from groq import Groq
 from dotenv import load_dotenv
 
-from utils import extract_answer
 from llm.llm_manager import LLMManager
-from llm.llm_config import CEREBRAS_MODEL, TEMPERATURE, MAX_TOKENS
+from llm.llm_config import TEMPERATURE, MAX_TOKENS, GROQ_MODEL
 
+from utils import extract_answer
 load_dotenv()
 
-
-class CerebrasLLM(LLMManager):
+class GroqLLM(LLMManager):
     def __init__(self, api_key: str | None = None):
-        key = api_key or os.getenv("CEREBRAS_API_KEY")
+        key = api_key or os.getenv("GROQ_API_KEY")
         if not key:
-            raise ValueError(
-                "Cerebras API key must be provided either as an argument or via the CEREBRAS_API_KEY environment variable.")
-        self.client = Cerebras(api_key=key)
+            raise ValueError("GROQ_API_KEY not found in environment variables.")
+        self.client = Groq(api_key=key)
 
     def generate(self, prompt: str) -> str:
         response = self.client.chat.completions.create(
@@ -25,15 +23,16 @@ class CerebrasLLM(LLMManager):
                     "content": prompt
                 },
             ],
-            model=CEREBRAS_MODEL,
+            model=GROQ_MODEL,
             temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-            top_p=1,
+            max_completion_tokens=MAX_TOKENS,
+            top_p=0.95,
+            reasoning_effort="default",
             stream=False
         )
 
         if not response.choices or len(response.choices) == 0:
-            raise RuntimeError("No response from Cerebras LLM.")
+            raise RuntimeError("No response from Groq LLM.")
 
         raw = response.choices[0].message.content
         answer = extract_answer(raw)

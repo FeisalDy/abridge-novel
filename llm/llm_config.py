@@ -1,5 +1,19 @@
 # llm/llm_config.py
-LLM_PROVIDER = "cerebras"  # gemini | deepseek | ollama | vllm | cerebras
+import os
+
+SUPPORTED_PROVIDERS = {
+    "gemini",
+    "deepseek",
+    "ollama",
+    "vllm",
+    "cerebras",
+    "groq",
+    "copilot",
+}
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "copilot")
+if LLM_PROVIDER not in SUPPORTED_PROVIDERS:
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
 # Shared config
 TEMPERATURE = 0.2
@@ -22,3 +36,10 @@ VLLM_MODEL = "Qwen/Qwen2.5-32B-Instruct"
 
 # Cerebras
 CEREBRAS_MODEL = "qwen-3-32b"
+
+# Groq
+GROQ_MODEL = "qwen/qwen3-32b"
+
+# Copilot
+COPILOT_BASE_URL = "https://models.github.ai/inference"
+COPILOT_MODEL = "openai/gpt-5-mini"

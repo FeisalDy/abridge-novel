@@ -126,8 +126,11 @@ def process_novel(novel_name: str) -> None:
 # --------------------------------------------------
 
 if __name__ == "__main__":
+    print(llm.generate("Answer with who are you?"))
+
     import sys
 
+    sys.exit(0)
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python chapter_condensation.py <novel_name>")
 
