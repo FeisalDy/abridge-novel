@@ -38,3 +38,4 @@ data/character_index/*
 data/character_salience/*
 data/relationship_matrix/*
 data/event_keywords/*
+data/genre_resolved/*

@@ -45,6 +45,7 @@ from character_indexing import generate_character_index
 from character_salience import generate_salience_index
 from relationship_matrix import generate_relationship_matrix
 from event_keywords import generate_event_keyword_map
+from genre_resolver import generate_genre_resolved
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -100,6 +101,7 @@ class SkipFlags:
     character_salience: bool = False
     relationship_matrix: bool = False
     event_keywords: bool = False
+    genre_resolver: bool = False
 
 
 # --------------------------------------------------
@@ -266,7 +268,7 @@ def run_pipeline(
         print("  --character-index: Will generate character surface index")
     
     # Log Tier-3 features if enabled
-    if skip_flags.character_salience or skip_flags.relationship_matrix or skip_flags.event_keywords:
+    if skip_flags.character_salience or skip_flags.relationship_matrix or skip_flags.event_keywords or skip_flags.genre_resolver:
         print("\nTier-3 features enabled:")
         if skip_flags.character_salience:
             print("  --character-salience: Will compute character salience scores")
@@ -274,6 +276,8 @@ def run_pipeline(
             print("  --relationship-matrix: Will compute character pair co-presence signals")
         if skip_flags.event_keywords:
             print("  --event-keywords: Will scan for event keyword signals")
+        if skip_flags.genre_resolver:
+            print("  --genre-resolver: Will resolve genres from Tier-3 evidence")
 
     try:
         # --------------------------------------------------
@@ -424,6 +428,22 @@ def run_pipeline(
             # Operates directly on condensed chapters; no upstream tier dependencies.
             generate_event_keyword_map(novel_name, run_id)
 
+        # --------------------------------------------------
+        # Tier-3.4a Feature: Genre Resolver (Optional)
+        # --------------------------------------------------
+        # GENRE RESOLVER: Compute confidence-scored genre assignments from Tier-3 evidence.
+        # This aggregates signals from Tier-3.1 (salience), Tier-3.2 (relationships),
+        # and Tier-3.3 (event keywords) to produce deterministic genre classifications.
+        # It does NOT interpret story meaning or use LLMs.
+        # See genre_resolver.py for rule documentation and consumer warnings.
+        if skip_flags.genre_resolver:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.4a: Genre Resolver")
+            print("=" * 50)
+            # NON-BLOCKING: Genre resolution failures do not halt the pipeline.
+            # Requires Tier-3 artifacts; works best with all three tiers available.
+            generate_genre_resolved(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -533,6 +553,12 @@ Examples:
         help="Scan for event keyword signals (Tier-3.3: lexical surface map)",
     )
     
+    parser.add_argument(
+        "--genre-resolver",
+        action="store_true",
+        help="Resolve genres from Tier-3 evidence (Tier-3.4a: rule-based, no LLM)",
+    )
+    
     return parser.parse_args()
 
 
@@ -547,6 +573,7 @@ if __name__ == "__main__":
         character_salience=args.character_salience,
         relationship_matrix=args.relationship_matrix,
         event_keywords=args.event_keywords,
+        genre_resolver=args.genre_resolver,
     )
     
     run_pipeline(args.novel_name, skip_flags)
