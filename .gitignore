@@ -39,3 +39,4 @@ data/character_salience/*
 data/relationship_matrix/*
 data/event_keywords/*
 data/genre_resolved/*
+data/tag_resolved/*

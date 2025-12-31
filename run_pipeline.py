@@ -46,6 +46,7 @@ from character_salience import generate_salience_index
 from relationship_matrix import generate_relationship_matrix
 from event_keywords import generate_event_keyword_map
 from genre_resolver import generate_genre_resolved
+from tag_resolver import generate_tag_resolved
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -102,6 +103,7 @@ class SkipFlags:
     relationship_matrix: bool = False
     event_keywords: bool = False
     genre_resolver: bool = False
+    tag_resolver: bool = False
 
 
 # --------------------------------------------------
@@ -268,7 +270,7 @@ def run_pipeline(
         print("  --character-index: Will generate character surface index")
     
     # Log Tier-3 features if enabled
-    if skip_flags.character_salience or skip_flags.relationship_matrix or skip_flags.event_keywords or skip_flags.genre_resolver:
+    if skip_flags.character_salience or skip_flags.relationship_matrix or skip_flags.event_keywords or skip_flags.genre_resolver or skip_flags.tag_resolver:
         print("\nTier-3 features enabled:")
         if skip_flags.character_salience:
             print("  --character-salience: Will compute character salience scores")
@@ -278,6 +280,8 @@ def run_pipeline(
             print("  --event-keywords: Will scan for event keyword signals")
         if skip_flags.genre_resolver:
             print("  --genre-resolver: Will resolve genres from Tier-3 evidence")
+        if skip_flags.tag_resolver:
+            print("  --tag-resolver: Will resolve tags from Tier-3 evidence")
 
     try:
         # --------------------------------------------------
@@ -444,6 +448,22 @@ def run_pipeline(
             # Requires Tier-3 artifacts; works best with all three tiers available.
             generate_genre_resolved(novel_name, run_id)
 
+        # --------------------------------------------------
+        # Tier-3.4b Feature: Tag Resolver (Optional)
+        # --------------------------------------------------
+        # TAG RESOLVER: Compute confidence-scored tag assignments from Tier-3 evidence.
+        # This aggregates signals from Tier-3.1 (salience), Tier-3.2 (relationships),
+        # Tier-3.3 (event keywords), and Tier-3.4a (genre) to produce tag classifications.
+        # It does NOT interpret story meaning or use LLMs.
+        # See tag_resolver.py for rule documentation and consumer warnings.
+        if skip_flags.tag_resolver:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.4b: Tag Resolver")
+            print("=" * 50)
+            # NON-BLOCKING: Tag resolution failures do not halt the pipeline.
+            # Requires Tier-3 + Tier-3.4a artifacts; works best with all available.
+            generate_tag_resolved(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -559,6 +579,12 @@ Examples:
         help="Resolve genres from Tier-3 evidence (Tier-3.4a: rule-based, no LLM)",
     )
     
+    parser.add_argument(
+        "--tag-resolver",
+        action="store_true",
+        help="Resolve tags from Tier-3 evidence (Tier-3.4b: rule-based, no LLM)",
+    )
+    
     return parser.parse_args()
 
 
@@ -574,6 +600,7 @@ if __name__ == "__main__":
         relationship_matrix=args.relationship_matrix,
         event_keywords=args.event_keywords,
         genre_resolver=args.genre_resolver,
+        tag_resolver=args.tag_resolver,
     )
     
     run_pipeline(args.novel_name, skip_flags)
