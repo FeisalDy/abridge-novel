@@ -106,12 +106,17 @@ def process_novel(novel_name: str) -> None:
     if not chapters:
         raise ValueError("No chapter files found")
 
-    for filename in chapters:
+    # PROGRESS: Report total count at stage start for visibility
+    total_chapters = len(chapters)
+    print(f"[Stage] Starting chapter condensation ({total_chapters} chapters)")
+
+    for chapter_index, filename in enumerate(chapters, start=1):
         input_path = os.path.join(raw_dir, filename)
         output_filename = filename.replace(".txt", ".condensed.txt")
         output_path = os.path.join(output_dir, output_filename)
 
-        print(f"Condensing {filename}...")
+        # PROGRESS: Per-unit progress log showing current index and total
+        print(f"[Chapter] {chapter_index} / {total_chapters} - {filename}")
 
         with open(input_path, "r", encoding="utf-8") as f:
             chapter_text = f.read()
@@ -130,6 +135,9 @@ def process_novel(novel_name: str) -> None:
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(condensed_text)
+
+    # PROGRESS: Stage completion log
+    print(f"[Stage] Finished chapter condensation ({total_chapters} chapters)")
 
 
 # --------------------------------------------------

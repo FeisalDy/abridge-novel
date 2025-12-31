@@ -215,7 +215,9 @@ def run_pipeline(
         # --------------------------------------------------
         # Stage 1: Chapter condensation
         # --------------------------------------------------
-        print("\n[1/3] Chapter condensation...")
+        print("\n" + "=" * 50)
+        print("[Pipeline] Stage 1/3: Chapter Condensation")
+        print("=" * 50)
         
         if skip_flags.skip_chapters:
             # SKIP VALIDATION: Verify outputs exist before allowing skip.
@@ -223,7 +225,8 @@ def run_pipeline(
             is_valid, message = validate_chapter_outputs(novel_name)
             
             if is_valid:
-                print(f"  ⏭️  SKIPPING (--skip-chapters flag): {message}")
+                print(f"[Skip] Skipping chapter condensation (--skip-chapters)")
+                print(f"[Skip] Reusing existing: {message}")
             else:
                 # SAFETY: Do not silently proceed with invalid outputs.
                 # Raise error to force user to either:
@@ -234,53 +237,55 @@ def run_pipeline(
                     f"Remove --skip-chapters flag to regenerate, or fix outputs manually."
                 )
         else:
-            print("  Condensing chapters...")
             condense_chapters(novel_name)
-            print("  ✅ Chapter condensation complete")
 
         # --------------------------------------------------
         # Stage 2: Arc condensation
         # --------------------------------------------------
-        print("\n[2/3] Arc condensation...")
+        print("\n" + "=" * 50)
+        print("[Pipeline] Stage 2/3: Arc Condensation")
+        print("=" * 50)
         
         if skip_flags.skip_arcs:
             # SKIP VALIDATION: Verify outputs exist before allowing skip.
             is_valid, message = validate_arc_outputs(novel_name)
             
             if is_valid:
-                print(f"  ⏭️  SKIPPING (--skip-arcs flag): {message}")
+                print(f"[Skip] Skipping arc condensation (--skip-arcs)")
+                print(f"[Skip] Reusing existing: {message}")
             else:
                 raise ValueError(
                     f"Cannot skip arcs - validation failed: {message}\n"
                     f"Remove --skip-arcs flag to regenerate, or fix outputs manually."
                 )
         else:
-            print("  Condensing arcs...")
             condense_arcs(novel_name)
-            print("  ✅ Arc condensation complete")
 
         # --------------------------------------------------
         # Stage 3: Novel condensation
         # --------------------------------------------------
-        print("\n[3/3] Novel condensation...")
+        print("\n" + "=" * 50)
+        print("[Pipeline] Stage 3/3: Novel Condensation")
+        print("=" * 50)
         
         if skip_flags.skip_novel:
             # SKIP VALIDATION: Verify outputs exist before allowing skip.
             is_valid, message = validate_novel_outputs(novel_name)
             
             if is_valid:
-                print(f"  ⏭️  SKIPPING (--skip-novel flag): {message}")
+                print(f"[Skip] Skipping novel condensation (--skip-novel)")
+                print(f"[Skip] Reusing existing: {message}")
             else:
                 raise ValueError(
                     f"Cannot skip novel - validation failed: {message}\n"
                     f"Remove --skip-novel flag to regenerate, or fix outputs manually."
                 )
         else:
-            print("  Condensing full novel...")
             condense_novel(novel_name)
-            print("  ✅ Novel condensation complete")
 
-        print(f"\n=== Pipeline complete for novel: {novel_name} ===")
+        print("\n" + "=" * 50)
+        print(f"[Pipeline] Complete: {novel_name}")
+        print("=" * 50)
         
     finally:
         # GUARDRAIL: Always print summary and end run, even if pipeline fails.

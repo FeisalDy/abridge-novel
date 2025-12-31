@@ -97,12 +97,12 @@ def reduce_until_fit(
     estimated_tokens = estimate_tokens(merged_text)
     
     if verbose:
-        print(f"  [{layer_name}] {len(units)} units, ~{estimated_tokens} tokens estimated")
+        print(f"  [Hierarchy] Layer '{layer_name}': {len(units)} units, ~{estimated_tokens} tokens")
     
     # Base case: merged text fits within limit
     if estimated_tokens <= max_tokens:
         if verbose:
-            print(f"  [{layer_name}] Input fits within limit, condensing...")
+            print(f"  [Hierarchy] Layer '{layer_name}' fits within limit, condensing...")
         result = condense_fn(merged_text)
         
         # GUARDRAIL: Record compression ratio for final condensation.
@@ -113,20 +113,20 @@ def reduce_until_fit(
         return result
     
     # Recursive case: input too large, need hierarchical reduction
+    # Group units deterministically by fixed count
+    # This is NOT semantic grouping - purely positional for reproducibility
+    condensed_groups = []
+    num_groups = (len(units) + units_per_group - 1) // units_per_group
+    
     if verbose:
-        print(f"  [{layer_name}] Input exceeds {max_tokens} token limit, "
-              f"creating intermediate layer...")
+        print(f"  [Hierarchy] Layer '{layer_name}' exceeds {max_tokens} token limit")
+        print(f"  [Hierarchy] Creating intermediate reduction ({num_groups} groups)")
     
     # Create intermediate layer directory if persistence is enabled
     layer_dir = None
     if intermediate_dir is not None:
         layer_dir = os.path.join(intermediate_dir, layer_name)
         os.makedirs(layer_dir, exist_ok=True)
-    
-    # Group units deterministically by fixed count
-    # This is NOT semantic grouping - purely positional for reproducibility
-    condensed_groups = []
-    num_groups = (len(units) + units_per_group - 1) // units_per_group
     
     for i in range(0, len(units), units_per_group):
         group = units[i:i + units_per_group]
@@ -140,15 +140,13 @@ def reduce_until_fit(
         if group_filepath and os.path.isfile(group_filepath):
             # Load existing condensed group from disk
             if verbose:
-                print(f"  [{layer_name}] Loading existing group "
-                      f"{group_index}/{num_groups} from disk (resume)...")
+                print(f"  [Group] {group_index} / {num_groups} - Loading from disk (resume)")
             with open(group_filepath, "r", encoding="utf-8") as f:
                 group_condensed = f.read()
         else:
             # Condense this group
             if verbose:
-                print(f"  [{layer_name}] Condensing intermediate group "
-                      f"{group_index}/{num_groups} ({len(group)} units)...")
+                print(f"  [Group] {group_index} / {num_groups} - Condensing ({len(group)} units)")
             
             group_merged = "\n\n".join(group)
             group_condensed = condense_fn(group_merged)
@@ -165,7 +163,7 @@ def reduce_until_fit(
                 with open(group_filepath, "w", encoding="utf-8") as f:
                     f.write(group_condensed)
                 if verbose:
-                    print(f"  [{layer_name}] Saved group {group_index} to: {group_filepath}")
+                    print(f"  [Group] {group_index} / {num_groups} - Saved to disk")
         
         condensed_groups.append(group_condensed)
     

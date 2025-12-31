@@ -81,7 +81,8 @@ def process_novel(novel_name: str) -> None:
     if not arc_files:
         raise ValueError("No arc files found")
 
-    print(f"Condensing full novel from {len(arc_files)} arcs...")
+    # PROGRESS: Report total count at stage start for visibility
+    print(f"[Stage] Starting novel condensation ({len(arc_files)} arcs)")
 
     # Load all condensed arc texts as separate units
     arc_texts = []
@@ -123,7 +124,9 @@ def process_novel(novel_name: str) -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(condensed_novel)
 
-    print(f"Final condensed novel written to: {output_path}")
+    # PROGRESS: Stage completion log
+    print(f"[Stage] Finished novel condensation")
+    print(f"[Output] {output_path}")
 
 
 # --------------------------------------------------

@@ -58,12 +58,17 @@ def process_novel(novel_name: str) -> None:
     if not chapter_files:
         raise ValueError("No condensed chapter files found")
 
+    # PROGRESS: Calculate total arcs and report at stage start
+    total_arcs = (len(chapter_files) + CHAPTERS_PER_ARC - 1) // CHAPTERS_PER_ARC
+    print(f"[Stage] Starting arc condensation ({total_arcs} arcs from {len(chapter_files)} chapters)")
+
     arc_index = 1
 
     for i in range(0, len(chapter_files), CHAPTERS_PER_ARC):
         arc_chapters = chapter_files[i:i + CHAPTERS_PER_ARC]
 
-        print(f"Condensing arc {arc_index} ({len(arc_chapters)} chapters)...")
+        # PROGRESS: Per-unit progress log showing current index and total
+        print(f"[Arc] {arc_index} / {total_arcs} ({len(arc_chapters)} chapters)")
 
         merged_text_parts = []
 
@@ -93,6 +98,9 @@ def process_novel(novel_name: str) -> None:
             f.write(condensed_arc)
 
         arc_index += 1
+
+    # PROGRESS: Stage completion log
+    print(f"[Stage] Finished arc condensation ({total_arcs} arcs)")
 
 
 # --------------------------------------------------
