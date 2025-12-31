@@ -11,7 +11,7 @@ SUPPORTED_PROVIDERS = {
     "copilot",
 }
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "copilot")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "cerebras")
 if LLM_PROVIDER not in SUPPORTED_PROVIDERS:
     raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
