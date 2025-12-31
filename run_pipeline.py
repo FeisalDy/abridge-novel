@@ -17,6 +17,12 @@ Resume/Skip Flags:
 - Use --skip-novel to reuse existing novel condensation
 - Skipping requires explicit flags AND valid existing outputs
 - Guardrails remain active for all non-skipped stages
+
+Run Report:
+- A unified report is generated at the end of each run
+- Aggregates guardrail signals, cost tracking, and artifact paths
+- Saved as JSON and Markdown in data/reports/
+- Non-blocking: report failures do not halt the pipeline
 """
 
 import os
@@ -29,6 +35,32 @@ from arc_condensation import process_novel as condense_arcs
 from novel_condensation import process_novel as condense_novel
 from guardrails import start_run, end_run, print_run_summary
 from cost_tracking import print_usage_summary
+from run_report import (
+    init_run_metadata,
+    finalize_run_metadata,
+    clear_run_metadata,
+    generate_and_save_report,
+)
+from llm.llm_config import LLM_PROVIDER
+
+
+# --------------------------------------------------
+# Helper: Get model name for current provider
+# --------------------------------------------------
+
+def _get_model_name_for_provider() -> str:
+    """Get the model name for the current LLM provider."""
+    from llm import llm_config
+    provider_to_model = {
+        "gemini": llm_config.GEMINI_MODEL,
+        "deepseek": llm_config.DEEPSEEK_MODEL,
+        "vllm": llm_config.VLLM_MODEL,
+        "cerebras": llm_config.CEREBRAS_MODEL,
+        "groq": llm_config.GROQ_MODEL,
+        "copilot": llm_config.COPILOT_MODEL,
+        "ollama": llm_config.OLLAMA_MODEL,
+    }
+    return provider_to_model.get(LLM_PROVIDER, "unknown")
 
 
 # --------------------------------------------------
@@ -202,6 +234,12 @@ def run_pipeline(
     print(f"=== Starting pipeline for novel: {novel_name} ===")
     print(f"Guardrail run ID: {run_id}")
     
+    # RUN REPORT: Initialize metadata collection for post-run report generation.
+    # This captures lightweight runtime data that cannot be queried from SQLite.
+    metadata = init_run_metadata(run_id, novel_name)
+    metadata.llm_provider = LLM_PROVIDER
+    metadata.model_name = _get_model_name_for_provider()
+    
     # Log skip flags if any are set
     if skip_flags.skip_chapters or skip_flags.skip_arcs or skip_flags.skip_novel:
         print("\nSkip flags active:")
@@ -228,6 +266,8 @@ def run_pipeline(
             if is_valid:
                 print(f"[Skip] Skipping chapter condensation (--skip-chapters)")
                 print(f"[Skip] Reusing existing: {message}")
+                # RUN REPORT: Record skip in metadata
+                metadata.chapters_skipped = True
             else:
                 # SAFETY: Do not silently proceed with invalid outputs.
                 # Raise error to force user to either:
@@ -239,6 +279,11 @@ def run_pipeline(
                 )
         else:
             condense_chapters(novel_name)
+        
+        # RUN REPORT: Record chapter count for report
+        chapters_dir = os.path.join(CHAPTERS_CONDENSED_DIR, novel_name)
+        if os.path.isdir(chapters_dir):
+            metadata.chapters_count = _count_files(chapters_dir, ".condensed.txt")
 
         # --------------------------------------------------
         # Stage 2: Arc condensation
@@ -254,6 +299,8 @@ def run_pipeline(
             if is_valid:
                 print(f"[Skip] Skipping arc condensation (--skip-arcs)")
                 print(f"[Skip] Reusing existing: {message}")
+                # RUN REPORT: Record skip in metadata
+                metadata.arcs_skipped = True
             else:
                 raise ValueError(
                     f"Cannot skip arcs - validation failed: {message}\n"
@@ -261,6 +308,11 @@ def run_pipeline(
                 )
         else:
             condense_arcs(novel_name)
+        
+        # RUN REPORT: Record arc count for report
+        arcs_dir = os.path.join(ARCS_CONDENSED_DIR, novel_name)
+        if os.path.isdir(arcs_dir):
+            metadata.arcs_count = _count_files(arcs_dir, ".condensed.txt")
 
         # --------------------------------------------------
         # Stage 3: Novel condensation
@@ -276,6 +328,8 @@ def run_pipeline(
             if is_valid:
                 print(f"[Skip] Skipping novel condensation (--skip-novel)")
                 print(f"[Skip] Reusing existing: {message}")
+                # RUN REPORT: Record skip in metadata
+                metadata.novel_skipped = True
             else:
                 raise ValueError(
                     f"Cannot skip novel - validation failed: {message}\n"
@@ -296,6 +350,13 @@ def run_pipeline(
         # COST TRACKING: Print LLM usage summary at end of run.
         # Shows total tokens and estimated cost for this pipeline execution.
         print_usage_summary(run_id)
+        
+        # RUN REPORT: Finalize metadata and generate unified report.
+        # This aggregates all run data into a single audit artifact.
+        # Report generation is non-blocking - errors are logged but don't halt.
+        finalized_metadata = finalize_run_metadata()
+        generate_and_save_report(run_id, novel_name, finalized_metadata)
+        clear_run_metadata()
         
         end_run()
 
