@@ -70,31 +70,60 @@ RAW_BASE_DIR = "data/raw"
 OUTPUT_BASE_DIR = "data/chapters_condensed"
 
 
+# Maximum retries for LLM calls before failing
+MAX_LLM_RETRIES = 3
+
+
 def run_llm(prompt: str, stage: str = "chapter", unit_id: str = "") -> str:
     """
     Run the LLM and track usage.
     
     Uses generate_with_usage() to capture token counts from the API response.
     Falls back to generate() if the LLM provider doesn't support usage tracking.
+    
+    Retries up to MAX_LLM_RETRIES times on failure.
+    Raises RuntimeError if all retries fail - never returns None.
     """
-    if hasattr(llm, 'generate_with_usage'):
-        response = llm.generate_with_usage(prompt)
-        
-        # COST TRACKING: Record the LLM call with actual token counts.
-        # This is observational only - does not modify output or block execution.
-        if response.input_tokens is not None and response.output_tokens is not None:
-            record_llm_usage(
-                model=response.model,
-                input_tokens=response.input_tokens,
-                output_tokens=response.output_tokens,
-                stage=stage,
-                unit_id=unit_id,
-            )
-        
-        return response.text
-    else:
-        # Fallback for LLM providers that don't support usage tracking
-        return llm.generate(prompt)
+    last_error = None
+    
+    for attempt in range(1, MAX_LLM_RETRIES + 1):
+        try:
+            if hasattr(llm, 'generate_with_usage'):
+                response = llm.generate_with_usage(prompt)
+                
+                # COST TRACKING: Record the LLM call with actual token counts.
+                # This is observational only - does not modify output or block execution.
+                if response.input_tokens is not None and response.output_tokens is not None:
+                    record_llm_usage(
+                        model=response.model,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
+                        stage=stage,
+                        unit_id=unit_id,
+                    )
+                
+                if response.text is not None:
+                    return response.text
+                else:
+                    raise RuntimeError("LLM returned empty response")
+            else:
+                # Fallback for LLM providers that don't support usage tracking
+                result = llm.generate(prompt)
+                if result is not None:
+                    return result
+                else:
+                    raise RuntimeError("LLM returned empty response")
+                    
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_LLM_RETRIES:
+                print(f"  ⚠️ LLM error for {unit_id} (attempt {attempt}/{MAX_LLM_RETRIES}): {e}")
+                print(f"  ↻ Retrying...")
+            else:
+                print(f"  🔴 LLM error for {unit_id} (attempt {attempt}/{MAX_LLM_RETRIES}): {e}")
+    
+    # All retries exhausted - raise error to stop pipeline
+    raise RuntimeError(f"LLM failed after {MAX_LLM_RETRIES} attempts for {unit_id}: {last_error}")
 
 
 # --------------------------------------------------
@@ -108,6 +137,12 @@ def condense_chapter(chapter_text: str, unit_id: str = "") -> str:
     Args:
         chapter_text: The raw chapter text to condense
         unit_id: Identifier for cost tracking (e.g., "chapter_001")
+    
+    Returns:
+        The condensed chapter text.
+    
+    Raises:
+        RuntimeError: If LLM fails after all retries.
     """
     prompt = BASE_CONDENSATION_PROMPT.format(
         INPUT_TEXT=chapter_text
@@ -152,6 +187,8 @@ def process_novel(novel_name: str) -> None:
 
         # Cost tracking unit ID derived from filename
         unit_id = filename.replace(".txt", "")
+        
+        # Condense the chapter - will retry on failure, raises on final failure
         condensed_text = condense_chapter(chapter_text, unit_id=unit_id)
 
         # GUARDRAIL: Record compression ratio for this chapter.
@@ -175,11 +212,8 @@ def process_novel(novel_name: str) -> None:
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    print(llm.generate("Answer with who are you?"))
-
     import sys
 
-    sys.exit(0)
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python chapter_condensation.py <novel_name>")
 

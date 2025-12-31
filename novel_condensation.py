@@ -19,6 +19,9 @@ NOVEL_CONDENSED_DIR = "data/novel_condensed"
 
 llm = create_llm()
 
+# Maximum retries for LLM calls before failing
+MAX_LLM_RETRIES = 3
+
 
 def run_llm(prompt: str, stage: str = "novel", unit_id: str = "") -> str:
     """
@@ -26,25 +29,50 @@ def run_llm(prompt: str, stage: str = "novel", unit_id: str = "") -> str:
     
     Uses generate_with_usage() to capture token counts from the API response.
     Falls back to generate() if the LLM provider doesn't support usage tracking.
+    
+    Retries up to MAX_LLM_RETRIES times on failure.
+    Raises RuntimeError if all retries fail - never returns None.
     """
-    if hasattr(llm, 'generate_with_usage'):
-        response = llm.generate_with_usage(prompt)
-        
-        # COST TRACKING: Record the LLM call with actual token counts.
-        # This is observational only - does not modify output or block execution.
-        if response.input_tokens is not None and response.output_tokens is not None:
-            record_llm_usage(
-                model=response.model,
-                input_tokens=response.input_tokens,
-                output_tokens=response.output_tokens,
-                stage=stage,
-                unit_id=unit_id,
-            )
-        
-        return response.text
-    else:
-        # Fallback for LLM providers that don't support usage tracking
-        return llm.generate(prompt)
+    last_error = None
+    
+    for attempt in range(1, MAX_LLM_RETRIES + 1):
+        try:
+            if hasattr(llm, 'generate_with_usage'):
+                response = llm.generate_with_usage(prompt)
+                
+                # COST TRACKING: Record the LLM call with actual token counts.
+                # This is observational only - does not modify output or block execution.
+                if response.input_tokens is not None and response.output_tokens is not None:
+                    record_llm_usage(
+                        model=response.model,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
+                        stage=stage,
+                        unit_id=unit_id,
+                    )
+                
+                if response.text is not None:
+                    return response.text
+                else:
+                    raise RuntimeError("LLM returned empty response")
+            else:
+                # Fallback for LLM providers that don't support usage tracking
+                result = llm.generate(prompt)
+                if result is not None:
+                    return result
+                else:
+                    raise RuntimeError("LLM returned empty response")
+                    
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_LLM_RETRIES:
+                print(f"  ⚠️ LLM error for {unit_id} (attempt {attempt}/{MAX_LLM_RETRIES}): {e}")
+                print(f"  ↻ Retrying...")
+            else:
+                print(f"  🔴 LLM error for {unit_id} (attempt {attempt}/{MAX_LLM_RETRIES}): {e}")
+    
+    # All retries exhausted - raise error to stop pipeline
+    raise RuntimeError(f"LLM failed after {MAX_LLM_RETRIES} attempts for {unit_id}: {last_error}")
 
 
 # --------------------------------------------------
@@ -63,6 +91,12 @@ def condense_text(text: str, stage: str = "novel", unit_id: str = "") -> str:
         text: The text to condense
         stage: Pipeline stage for cost tracking (e.g., "arc", "super-arc")
         unit_id: Identifier for cost tracking (e.g., "arc_group_01")
+    
+    Returns:
+        The condensed text.
+    
+    Raises:
+        RuntimeError: If LLM fails after all retries.
     """
     prompt = BASE_CONDENSATION_PROMPT.format(
         INPUT_TEXT=text
