@@ -100,6 +100,12 @@ def process_novel(novel_name: str) -> None:
             unit_id=unit_id,
         )
 
+    # RESUME SUPPORT: Use output_dir as intermediate storage for hierarchical layers.
+    # This enables resume after interruption - intermediate groups are saved to disk
+    # immediately after condensation and reloaded on subsequent runs.
+    # Directory structure: output_dir/arc/group_001.condensed.txt, etc.
+    intermediate_dir = output_dir
+
     # Use reduce_until_fit to handle arbitrary input sizes.
     # For small novels: behaves like original (single condensation pass).
     # For large novels: creates intermediate hierarchy layers as needed.
@@ -109,6 +115,7 @@ def process_novel(novel_name: str) -> None:
         layer_name="arc",
         verbose=True,
         guardrail_callback=guardrail_callback,
+        intermediate_dir=intermediate_dir,
     )
 
     output_path = os.path.join(output_dir, "novel.condensed.txt")

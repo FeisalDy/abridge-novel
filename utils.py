@@ -43,6 +43,7 @@ def reduce_until_fit(
     layer_name: str = "unit",
     verbose: bool = True,
     guardrail_callback: Optional[Callable[[str, str, str, str], None]] = None,
+    intermediate_dir: Optional[str] = None,
 ) -> str:
     """
     Recursively condense a list of text units until the merged result fits
@@ -61,6 +62,11 @@ def reduce_until_fit(
     applied only when needed, without changing the condensation prompt or
     editorial behavior.
     
+    RESUME SUPPORT:
+    When intermediate_dir is provided, each intermediate group result is saved
+    to disk immediately after condensation. On subsequent runs, existing files
+    are loaded instead of re-condensing, enabling resume after interruption.
+    
     Args:
         units: List of text strings to condense (e.g., condensed arcs).
         condense_fn: Function that takes merged text and returns condensed text.
@@ -71,6 +77,8 @@ def reduce_until_fit(
         verbose: Whether to print progress information.
         guardrail_callback: Optional callback for recording condensation metrics.
                            Signature: (input_text, output_text, stage, unit_id) -> None
+        intermediate_dir: Optional directory to save intermediate layer outputs.
+                         If provided, enables resume after interruption.
     
     Returns:
         The final condensed text that fits within the token limit.
@@ -78,7 +86,7 @@ def reduce_until_fit(
     Design notes:
     - Grouping is purely positional/deterministic, not semantic.
     - The same condensation prompt is used at every layer.
-    - Intermediate outputs could be saved if needed for inspection.
+    - Intermediate outputs are saved if intermediate_dir is provided.
     - This function is idempotent: small inputs pass through with one condensation.
     """
     if not units:
@@ -109,6 +117,12 @@ def reduce_until_fit(
         print(f"  [{layer_name}] Input exceeds {max_tokens} token limit, "
               f"creating intermediate layer...")
     
+    # Create intermediate layer directory if persistence is enabled
+    layer_dir = None
+    if intermediate_dir is not None:
+        layer_dir = os.path.join(intermediate_dir, layer_name)
+        os.makedirs(layer_dir, exist_ok=True)
+    
     # Group units deterministically by fixed count
     # This is NOT semantic grouping - purely positional for reproducibility
     condensed_groups = []
@@ -118,17 +132,40 @@ def reduce_until_fit(
         group = units[i:i + units_per_group]
         group_index = i // units_per_group + 1
         
-        if verbose:
-            print(f"  [{layer_name}] Condensing intermediate group "
-                  f"{group_index}/{num_groups} ({len(group)} units)...")
+        # RESUME SUPPORT: Check if this group was already condensed in a previous run.
+        # This enables resuming after interruption without re-doing completed work.
+        group_filename = f"group_{group_index:03d}.condensed.txt"
+        group_filepath = os.path.join(layer_dir, group_filename) if layer_dir else None
         
-        group_merged = "\n\n".join(group)
-        group_condensed = condense_fn(group_merged)
-        
-        # GUARDRAIL: Record compression ratio for intermediate group.
-        # This is observational only - does not modify output or block execution.
-        if guardrail_callback is not None:
-            guardrail_callback(group_merged, group_condensed, layer_name, f"{layer_name}_group_{group_index:02d}")
+        if group_filepath and os.path.isfile(group_filepath):
+            # Load existing condensed group from disk
+            if verbose:
+                print(f"  [{layer_name}] Loading existing group "
+                      f"{group_index}/{num_groups} from disk (resume)...")
+            with open(group_filepath, "r", encoding="utf-8") as f:
+                group_condensed = f.read()
+        else:
+            # Condense this group
+            if verbose:
+                print(f"  [{layer_name}] Condensing intermediate group "
+                      f"{group_index}/{num_groups} ({len(group)} units)...")
+            
+            group_merged = "\n\n".join(group)
+            group_condensed = condense_fn(group_merged)
+            
+            # GUARDRAIL: Record compression ratio for intermediate group.
+            # This is observational only - does not modify output or block execution.
+            if guardrail_callback is not None:
+                guardrail_callback(group_merged, group_condensed, layer_name, f"{layer_name}_group_{group_index:02d}")
+            
+            # PERSISTENCE: Save immediately after condensation to enable resume.
+            # Each group is saved as soon as it completes, so interruption only
+            # loses the currently-in-progress group, not all previous work.
+            if group_filepath:
+                with open(group_filepath, "w", encoding="utf-8") as f:
+                    f.write(group_condensed)
+                if verbose:
+                    print(f"  [{layer_name}] Saved group {group_index} to: {group_filepath}")
         
         condensed_groups.append(group_condensed)
     
@@ -144,6 +181,7 @@ def reduce_until_fit(
         layer_name=next_layer_name,
         verbose=verbose,
         guardrail_callback=guardrail_callback,
+        intermediate_dir=intermediate_dir,
     )
 
 
