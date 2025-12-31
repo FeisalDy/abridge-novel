@@ -57,6 +57,7 @@
 import os
 from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
+from guardrails import record_condensation
 
 # --------------------------------------------------
 # Configuration
@@ -116,6 +117,16 @@ def process_novel(novel_name: str) -> None:
             chapter_text = f.read()
 
         condensed_text = condense_chapter(chapter_text)
+
+        # GUARDRAIL: Record compression ratio for this chapter.
+        # This is observational only - does not modify output or block execution.
+        unit_id = filename.replace(".txt", "")
+        record_condensation(
+            input_text=chapter_text,
+            output_text=condensed_text,
+            stage="chapter",
+            unit_id=unit_id,
+        )
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(condensed_text)

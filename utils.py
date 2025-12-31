@@ -1,6 +1,6 @@
 import os
 import re
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 # --------------------------------------------------
 # Token estimation and context limit configuration
@@ -42,6 +42,7 @@ def reduce_until_fit(
     units_per_group: int = DEFAULT_UNITS_PER_GROUP,
     layer_name: str = "unit",
     verbose: bool = True,
+    guardrail_callback: Optional[Callable[[str, str, str, str], None]] = None,
 ) -> str:
     """
     Recursively condense a list of text units until the merged result fits
@@ -68,6 +69,8 @@ def reduce_until_fit(
         units_per_group: Number of units to group in each intermediate layer.
         layer_name: Label for logging (e.g., "arc", "super-arc").
         verbose: Whether to print progress information.
+        guardrail_callback: Optional callback for recording condensation metrics.
+                           Signature: (input_text, output_text, stage, unit_id) -> None
     
     Returns:
         The final condensed text that fits within the token limit.
@@ -92,7 +95,14 @@ def reduce_until_fit(
     if estimated_tokens <= max_tokens:
         if verbose:
             print(f"  [{layer_name}] Input fits within limit, condensing...")
-        return condense_fn(merged_text)
+        result = condense_fn(merged_text)
+        
+        # GUARDRAIL: Record compression ratio for final condensation.
+        # This is observational only - does not modify output or block execution.
+        if guardrail_callback is not None:
+            guardrail_callback(merged_text, result, layer_name, f"{layer_name}_final")
+        
+        return result
     
     # Recursive case: input too large, need hierarchical reduction
     if verbose:
@@ -114,6 +124,12 @@ def reduce_until_fit(
         
         group_merged = "\n\n".join(group)
         group_condensed = condense_fn(group_merged)
+        
+        # GUARDRAIL: Record compression ratio for intermediate group.
+        # This is observational only - does not modify output or block execution.
+        if guardrail_callback is not None:
+            guardrail_callback(group_merged, group_condensed, layer_name, f"{layer_name}_group_{group_index:02d}")
+        
         condensed_groups.append(group_condensed)
     
     # Recurse with condensed groups as the new units
@@ -127,6 +143,7 @@ def reduce_until_fit(
         units_per_group=units_per_group,
         layer_name=next_layer_name,
         verbose=verbose,
+        guardrail_callback=guardrail_callback,
     )
 
 

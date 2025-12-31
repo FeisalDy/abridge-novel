@@ -2,6 +2,7 @@ import os
 from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
 from utils import reduce_until_fit
+from guardrails import record_condensation
 
 # --------------------------------------------------
 # Configuration
@@ -89,6 +90,16 @@ def process_novel(novel_name: str) -> None:
         with open(path, "r", encoding="utf-8") as f:
             arc_texts.append(f.read())
 
+    # GUARDRAIL: Create callback for recording condensation metrics.
+    # This wrapper adapts record_condensation to the callback signature expected by reduce_until_fit.
+    def guardrail_callback(input_text: str, output_text: str, stage: str, unit_id: str) -> None:
+        record_condensation(
+            input_text=input_text,
+            output_text=output_text,
+            stage=stage,
+            unit_id=unit_id,
+        )
+
     # Use reduce_until_fit to handle arbitrary input sizes.
     # For small novels: behaves like original (single condensation pass).
     # For large novels: creates intermediate hierarchy layers as needed.
@@ -97,6 +108,7 @@ def process_novel(novel_name: str) -> None:
         condense_fn=condense_text,
         layer_name="arc",
         verbose=True,
+        guardrail_callback=guardrail_callback,
     )
 
     output_path = os.path.join(output_dir, "novel.condensed.txt")

@@ -1,6 +1,7 @@
 import os
 from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
+from guardrails import record_condensation
 
 # --------------------------------------------------
 # Configuration
@@ -74,6 +75,16 @@ def process_novel(novel_name: str) -> None:
         merged_text = "\n\n".join(merged_text_parts)
 
         condensed_arc = condense_arc(merged_text)
+
+        # GUARDRAIL: Record compression ratio for this arc.
+        # This is observational only - does not modify output or block execution.
+        unit_id = f"arc_{arc_index:02d}"
+        record_condensation(
+            input_text=merged_text,
+            output_text=condensed_arc,
+            stage="arc",
+            unit_id=unit_id,
+        )
 
         output_filename = f"arc_{arc_index:02d}.condensed.txt"
         output_path = os.path.join(output_dir, output_filename)
