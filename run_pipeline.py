@@ -42,6 +42,7 @@ from run_report import (
     generate_and_save_report,
 )
 from character_indexing import generate_character_index
+from character_salience import generate_salience_index
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -93,6 +94,8 @@ class SkipFlags:
     skip_novel: bool = False
     # Tier-2 feature: Character surface indexing (optional, explicitly invoked)
     character_index: bool = False
+    # Tier-3 feature: Character salience scoring (requires Tier-2 data)
+    character_salience: bool = False
 
 
 # --------------------------------------------------
@@ -257,6 +260,11 @@ def run_pipeline(
     if skip_flags.character_index:
         print("\nTier-2 features enabled:")
         print("  --character-index: Will generate character surface index")
+    
+    # Log Tier-3 features if enabled
+    if skip_flags.character_salience:
+        print("\nTier-3 features enabled:")
+        print("  --character-salience: Will compute character salience scores")
 
     try:
         # --------------------------------------------------
@@ -361,6 +369,22 @@ def run_pipeline(
             # The function logs errors internally and returns None on failure.
             generate_character_index(novel_name, run_id)
 
+        # --------------------------------------------------
+        # Tier-3.1 Feature: Character Salience Index (Optional)
+        # --------------------------------------------------
+        # SALIENCE INDEX: Compute textual dominance scores from Tier-2 surface data.
+        # This is a DERIVED feature that measures how much each character name
+        # dominates the narrative surface. It does NOT identify protagonists,
+        # infer roles, or interpret narrative importance.
+        # See character_salience.py for formula documentation and consumer warnings.
+        if skip_flags.character_salience:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.1: Character Salience Index")
+            print("=" * 50)
+            # NON-BLOCKING: Salience computation failures do not halt the pipeline.
+            # Requires Tier-2 data; will fail gracefully if not available.
+            generate_salience_index(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -451,6 +475,13 @@ Examples:
         help="Generate character surface index (Tier-2: structural, non-semantic)",
     )
     
+    # Tier-3 feature flags (optional, require Tier-2 data)
+    parser.add_argument(
+        "--character-salience",
+        action="store_true",
+        help="Compute character salience scores (Tier-3.1: derived from Tier-2)",
+    )
+    
     return parser.parse_args()
 
 
@@ -462,6 +493,7 @@ if __name__ == "__main__":
         skip_arcs=args.skip_arcs,
         skip_novel=args.skip_novel,
         character_index=args.character_index,
+        character_salience=args.character_salience,
     )
     
     run_pipeline(args.novel_name, skip_flags)
