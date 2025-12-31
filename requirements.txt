@@ -2,6 +2,7 @@ google-genai
 protobuf
 python-dotenv
 openai
+tiktoken
 
 cerebras-cloud-sdk
 cerebras

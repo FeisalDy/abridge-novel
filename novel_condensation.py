@@ -1,6 +1,7 @@
 import os
 from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
+from utils import reduce_until_fit
 
 # --------------------------------------------------
 # Configuration
@@ -25,9 +26,13 @@ def run_llm(prompt: str) -> str:
 # Core logic
 # --------------------------------------------------
 
-def condense_novel(text: str) -> str:
+def condense_text(text: str) -> str:
     """
-    Apply the base condensation prompt to full arc-merged text.
+    Apply the base condensation prompt to any text.
+    
+    This is the atomic condensation operation used at all hierarchy levels.
+    The same prompt is applied whether condensing arcs, super-arcs, or
+    the final novel.
     """
     prompt = BASE_CONDENSATION_PROMPT.format(
         INPUT_TEXT=text
@@ -35,9 +40,29 @@ def condense_novel(text: str) -> str:
     return run_llm(prompt)
 
 
+# Legacy alias for backward compatibility
+condense_novel = condense_text
+
+
 def process_novel(novel_name: str) -> None:
     """
     Produce the final condensed novel from arc-level outputs.
+    
+    SCALABILITY FIX:
+    The original implementation assumed all condensed arcs could be merged
+    and processed in a single LLM call. This fails for extremely large novels
+    where the combined arc text exceeds the model's context window.
+    
+    The fix uses reduce_until_fit() which:
+    1. Checks if the merged input fits within the token limit.
+    2. If yes, performs a single condensation (original behavior preserved).
+    3. If no, creates intermediate hierarchical layers by grouping arcs
+       deterministically and condensing each group, then recursing.
+    
+    This maintains:
+    - The same condensation prompt at all levels.
+    - Deterministic, reproducible grouping (by position, not semantics).
+    - Original behavior for small novels that already fit.
     """
     input_dir = os.path.join(ARCS_CONDENSED_DIR, novel_name)
     output_dir = os.path.join(NOVEL_CONDENSED_DIR, novel_name)
@@ -57,16 +82,22 @@ def process_novel(novel_name: str) -> None:
 
     print(f"Condensing full novel from {len(arc_files)} arcs...")
 
-    merged_text_parts = []
-
+    # Load all condensed arc texts as separate units
+    arc_texts = []
     for filename in arc_files:
         path = os.path.join(input_dir, filename)
         with open(path, "r", encoding="utf-8") as f:
-            merged_text_parts.append(f.read())
+            arc_texts.append(f.read())
 
-    merged_text = "\n\n".join(merged_text_parts)
-
-    condensed_novel = condense_novel(merged_text)
+    # Use reduce_until_fit to handle arbitrary input sizes.
+    # For small novels: behaves like original (single condensation pass).
+    # For large novels: creates intermediate hierarchy layers as needed.
+    condensed_novel = reduce_until_fit(
+        units=arc_texts,
+        condense_fn=condense_text,
+        layer_name="arc",
+        verbose=True,
+    )
 
     output_path = os.path.join(output_dir, "novel.condensed.txt")
 
