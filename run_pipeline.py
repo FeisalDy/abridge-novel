@@ -41,6 +41,7 @@ from run_report import (
     clear_run_metadata,
     generate_and_save_report,
 )
+from character_indexing import generate_character_index
 from llm.llm_config import LLM_PROVIDER
 
 
@@ -90,6 +91,8 @@ class SkipFlags:
     skip_chapters: bool = False
     skip_arcs: bool = False
     skip_novel: bool = False
+    # Tier-2 feature: Character surface indexing (optional, explicitly invoked)
+    character_index: bool = False
 
 
 # --------------------------------------------------
@@ -249,6 +252,11 @@ def run_pipeline(
             print("  --skip-arcs: Will reuse existing condensed arcs")
         if skip_flags.skip_novel:
             print("  --skip-novel: Will reuse existing novel condensation")
+    
+    # Log Tier-2 features if enabled
+    if skip_flags.character_index:
+        print("\nTier-2 features enabled:")
+        print("  --character-index: Will generate character surface index")
 
     try:
         # --------------------------------------------------
@@ -338,6 +346,21 @@ def run_pipeline(
         else:
             condense_novel(novel_name)
 
+        # --------------------------------------------------
+        # Tier-2 Feature: Character Surface Indexing (Optional)
+        # --------------------------------------------------
+        # CHARACTER INDEX: Extract surface-level name statistics from condensed chapters.
+        # This is a STRUCTURAL feature that provides factual data for downstream Tier-3
+        # analysis (e.g., genre/tag detection). It does NOT interpret narrative meaning.
+        # See character_indexing.py for strict scope limits and consumer warnings.
+        if skip_flags.character_index:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-2: Character Surface Indexing")
+            print("=" * 50)
+            # NON-BLOCKING: Character index generation failures do not halt the pipeline.
+            # The function logs errors internally and returns None on failure.
+            generate_character_index(novel_name, run_id)
+
         print("\n" + "=" * 50)
         print(f"[Pipeline] Complete: {novel_name}")
         print("=" * 50)
@@ -421,6 +444,13 @@ Examples:
         help="Skip novel condensation, reuse existing final output",
     )
     
+    # Tier-2 feature flags (optional, explicitly invoked)
+    parser.add_argument(
+        "--character-index",
+        action="store_true",
+        help="Generate character surface index (Tier-2: structural, non-semantic)",
+    )
+    
     return parser.parse_args()
 
 
@@ -431,6 +461,7 @@ if __name__ == "__main__":
         skip_chapters=args.skip_chapters,
         skip_arcs=args.skip_arcs,
         skip_novel=args.skip_novel,
+        character_index=args.character_index,
     )
     
     run_pipeline(args.novel_name, skip_flags)
