@@ -59,36 +59,51 @@
 
 ### Full Novel Condensation (Stage 3)
 
-* [ ] Merge all condensed arcs in strict chronological order
-* [ ] Run a single global condensation pass
-* [ ] Reserve 32B-class or premium LLM usage for this step only
-* [ ] Enforce “no further summarization” beyond rule-compliant condensation
+* [x] Merge all condensed arcs in strict chronological order
+  **DONE (2026-01-06):** Implemented in `novel_condensation.py` lines 518-555. Arc files are sorted alphabetically and merged with `"\n\n".join()` preserving chronological order.
+* [x] Run a single global condensation pass
+  **DONE (2026-01-06):** Implemented in `novel_condensation.py` lines 643-674. Single `output_condense_fn(combined_input)` call produces `novel.condensed.txt`. Multi-part chunking only triggers for output overflow.
+* [x] Reserve 32B-class or premium LLM usage for this step only
+  **DONE (2026-01-06):** Implemented via stage-specific model selection. Line 42: `create_llm(stage="novel")`. Use `NOVEL_LLM_PROVIDER` env var to reserve premium models. Default models (qwen-3-32b, Qwen2.5-32B) are 32B-class.
+* [x] Enforce "no further summarization" beyond rule-compliant condensation
+  **DONE (2026-01-06):** Enforced in `prompt.py` BASE_CONDENSATION_PROMPT: "Do not omit events that influence future developments" and "Do not rewrite the story into an abstract summary."
 
 ---
 
 ### Validation & Quality Control
 
 * [ ] Implement event coverage validation (no missing required events)
+  **BLOCKED (2026-01-06):** Requires event extraction (Structural Scaffolding TODO) which is SKIPPED due to LLM cost.
 * [ ] Implement character continuity validation
+  **BLOCKED (2026-01-06):** Requires upstream character/event extraction which is not implemented.
 * [ ] Implement chronology monotonicity checks
+  **BLOCKED (2026-01-06):** Requires event timeline extraction which is not implemented.
 * [ ] Block pipeline progression on validation failure
+  **BLOCKED (2026-01-06):** Depends on validation implementations above.
 
 ---
 
 ### Cost & Performance Controls
 
-* [ ] Track token counts per stage
-* [ ] Track cost per novel and per stage
-* [ ] Prevent automatic escalation to larger models
-* [ ] Log and review retries for systematic rule violations
+* [x] Track token counts per stage
+  **DONE (2026-01-06):** Implemented in `cost_tracking.py`. Each LLM call records `input_tokens`, `output_tokens`, and `stage` to SQLite via `record_llm_usage()`.
+* [x] Track cost per novel and per stage
+  **DONE (2026-01-06):** Implemented in `cost_tracking.py`. Costs estimated via `MODEL_PRICING` table and aggregated by `get_usage_summary()`. Reports printed at pipeline end.
+* [x] Prevent automatic escalation to larger models
+  **DONE (2026-01-06):** No automatic escalation exists in the codebase. Stage-specific models are explicitly configured via `CHAPTER_LLM_PROVIDER`, `ARC_LLM_PROVIDER`, `NOVEL_LLM_PROVIDER` env vars.
+* [x] Log and review retries for systematic rule violations
+  **DONE (2026-01-06):** Retries are logged to console with attempt count. MAX_LLM_RETRIES=3 in all condensation modules. Guardrail events capture compression ratio violations.
 
 ---
 
 ### Metadata & Separation of Concerns
 
-* [ ] Expand Genre and Tags definitions with finer sub-genres and themes
-* [ ] Ensure genre metadata never influences narrative condensation
-* [ ] Store metadata separately from condensed text
+* [x] Expand Genre and Tags definitions with finer sub-genres and themes
+  **DONE (2026-01-06):** Implemented in `genre_resolver.py` (15+ genres with `GENRE_TAXONOMY`) and `tag_resolver.py` (30+ tags in `TAG_TAXONOMY`). Includes sub-categories for Eastern Fantasy, System/GameLit, Relationship, Protagonist Form, etc.
+* [x] Ensure genre metadata never influences narrative condensation
+  **DONE (2026-01-06):** `prompt.py` line 13 explicitly prohibits genre labels: "Do not add opinions, evaluations, interpretations, or genre labels." Genre/tag resolvers are Tier-3 optional features that run AFTER condensation completes.
+* [x] Store metadata separately from condensed text
+  **DONE (2026-01-06):** Data directories enforce separation: condensed text in `data/chapters_condensed/`, `data/arcs_condensed/`, `data/novel_condensed/`; metadata in `data/genre_resolved/`, `data/tag_resolved/`, `data/character_salience/`, etc.
 
 ---
 
