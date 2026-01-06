@@ -7,3 +7,6 @@ tiktoken
 cerebras-cloud-sdk
 cerebras
 groq
+
+# Pre-filtering dependencies (deterministic chapter cleanup)
+spacy>=3.0.0

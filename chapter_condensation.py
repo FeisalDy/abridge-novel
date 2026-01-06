@@ -59,6 +59,7 @@ from prompt import BASE_CONDENSATION_PROMPT
 from llm import create_llm
 from guardrails import record_condensation
 from cost_tracking import record_llm_usage
+from prefilter import prefilter_chapter, PrefilterResult
 
 # --------------------------------------------------
 # Configuration
@@ -130,24 +131,47 @@ def run_llm(prompt: str, stage: str = "chapter", unit_id: str = "") -> str:
 # Core logic
 # --------------------------------------------------
 
-def condense_chapter(chapter_text: str, unit_id: str = "") -> str:
+def condense_chapter(chapter_text: str, unit_id: str = "") -> tuple[str, PrefilterResult | None]:
     """
-    Apply the base condensation prompt to a single chapter.
+    Apply deterministic pre-filtering and then LLM condensation to a chapter.
+    
+    Pre-filtering removes non-plot paragraphs (those with no named entities,
+    no dialogue, and no past-tense verbs) BEFORE sending to the LLM.
+    This reduces token costs and noise.
     
     Args:
         chapter_text: The raw chapter text to condense
         unit_id: Identifier for cost tracking (e.g., "chapter_001")
     
     Returns:
-        The condensed chapter text.
+        Tuple of (condensed_text, prefilter_result).
+        prefilter_result contains statistics about what was filtered.
     
     Raises:
         RuntimeError: If LLM fails after all retries.
     """
+    # STEP 1: Deterministic pre-filtering (language-aware)
+    # Remove paragraphs that have no plot-relevant signals.
+    # This is a STRUCTURAL operation, not semantic interpretation.
+    # NOTE: Filtering is ONLY applied to English text. Non-English passes through unchanged.
+    prefilter_result = prefilter_chapter(chapter_text)
+    
+    # Log pre-filter statistics
+    if not prefilter_result.filtering_applied:
+        print(f"  [prefilter] Skipped (non-English text detected: {prefilter_result.detected_language})")
+    elif prefilter_result.dropped_paragraph_count > 0:
+        print(f"  [prefilter] Dropped {prefilter_result.dropped_paragraph_count}/{prefilter_result.original_paragraph_count} paragraphs ({prefilter_result.drop_ratio:.1%})")
+    
+    # Use filtered text for LLM condensation
+    text_for_llm = prefilter_result.filtered_text
+    
+    # STEP 2: LLM condensation on filtered text
     prompt = BASE_CONDENSATION_PROMPT.format(
-        INPUT_TEXT=chapter_text
+        INPUT_TEXT=text_for_llm
     )
-    return run_llm(prompt, stage="chapter", unit_id=unit_id)
+    condensed_text = run_llm(prompt, stage="chapter", unit_id=unit_id)
+    
+    return condensed_text, prefilter_result
 
 
 def process_novel(novel_name: str) -> None:
@@ -173,6 +197,10 @@ def process_novel(novel_name: str) -> None:
     # PROGRESS: Report total count at stage start for visibility
     total_chapters = len(chapters)
     print(f"[Stage] Starting chapter condensation ({total_chapters} chapters)")
+    
+    # Track aggregate pre-filter statistics
+    total_original_paragraphs = 0
+    total_dropped_paragraphs = 0
 
     for chapter_index, filename in enumerate(chapters, start=1):
         input_path = os.path.join(raw_dir, filename)
@@ -188,11 +216,17 @@ def process_novel(novel_name: str) -> None:
         # Cost tracking unit ID derived from filename
         unit_id = filename.replace(".txt", "")
         
-        # Condense the chapter - will retry on failure, raises on final failure
-        condensed_text = condense_chapter(chapter_text, unit_id=unit_id)
+        # Condense the chapter (with pre-filtering) - will retry on failure, raises on final failure
+        condensed_text, prefilter_result = condense_chapter(chapter_text, unit_id=unit_id)
+        
+        # Accumulate pre-filter statistics
+        if prefilter_result:
+            total_original_paragraphs += prefilter_result.original_paragraph_count
+            total_dropped_paragraphs += prefilter_result.dropped_paragraph_count
 
         # GUARDRAIL: Record compression ratio for this chapter.
         # This is observational only - does not modify output or block execution.
+        # NOTE: We record against the ORIGINAL text, not pre-filtered, for accurate ratio.
         record_condensation(
             input_text=chapter_text,
             output_text=condensed_text,
@@ -203,8 +237,11 @@ def process_novel(novel_name: str) -> None:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(condensed_text)
 
-    # PROGRESS: Stage completion log
+    # PROGRESS: Stage completion log with pre-filter summary
     print(f"[Stage] Finished chapter condensation ({total_chapters} chapters)")
+    if total_original_paragraphs > 0:
+        overall_drop_ratio = total_dropped_paragraphs / total_original_paragraphs
+        print(f"[prefilter] Total: dropped {total_dropped_paragraphs}/{total_original_paragraphs} paragraphs ({overall_drop_ratio:.1%})")
 
 
 # --------------------------------------------------
