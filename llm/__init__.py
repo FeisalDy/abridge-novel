@@ -89,5 +89,8 @@ def create_llm(stage: Optional[str] = None):
     if provider == "ollama":
         from llm.ollama_llm import OllamaLLM
         return OllamaLLM()
+    if provider == "openrouter":
+        from llm.openrouter_llm import OpenRouterLLM
+        return OpenRouterLLM()
 
     raise ValueError(f"LLM provider {provider} is not supported.")

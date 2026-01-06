@@ -9,6 +9,7 @@ SUPPORTED_PROVIDERS = {
     "cerebras",
     "groq",
     "copilot",
+    "openrouter",
 }
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "cerebras")
@@ -68,3 +69,7 @@ GROQ_MODEL = "qwen/qwen3-32b"
 # Copilot
 COPILOT_BASE_URL = "https://models.github.ai/inference"
 COPILOT_MODEL = "openai/gpt-5-mini"
+
+# OpenRouter (OpenAI-compatible endpoint)
+OPENROUTER_MODEL = "qwen/qwen3-4b:free"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
