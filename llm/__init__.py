@@ -32,6 +32,7 @@ def create_llm():
         return CopilotLLM()
 
     if LLM_PROVIDER == "ollama":
-        raise ValueError("Ollama is not implemented yet.")
+        from llm.ollama_llm import OllamaLLM
+        return OllamaLLM()
 
     raise ValueError(f"LLM_PROVIDER {LLM_PROVIDER} is not supported.")

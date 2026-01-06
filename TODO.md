@@ -10,8 +10,9 @@
 * [x] Add deterministic pre-filtering to remove non-plot text
   *Drop paragraphs with no named entities, no dialogue, and no past-tense actions.*
   **DONE (2026-01-06):** Implemented in `prefilter.py`. Language-aware: only English text is filtered. Non-English (Chinese, CJK, etc.) passes through unchanged per editorial safety rules.
-* [ ] Replace large LLM usage with a local 7B–9B compression model
+* [x] Replace large LLM usage with a local 7B–9B compression model
   *Restrict the model to chapter-local condensation only.*
+  **DONE (2026-01-06):** Implemented `ollama_llm.py`. Supports local 7B-9B models (qwen2.5:7b, llama3.1:8b, mistral:7b, gemma2:9b). Use with `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:7b`.
 * [ ] Enforce strict “no inference / no reordering” editor constraints at this stage
   *Chapter output must preserve original chronology and causality.*
 * [ ] Add automatic retry with stricter prompt if validation fails

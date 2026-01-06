@@ -22,9 +22,15 @@ MAX_TOKENS = 4096
 # Gemini
 GEMINI_MODEL = "models/gemini-2.5-flash"
 
-# Ollama
-OLLAMA_MODEL = "llama3"
-OLLAMA_BASE_URL = "http://localhost:11434"
+# Ollama (local inference)
+# RECOMMENDED 7B-9B MODELS FOR CHAPTER CONDENSATION:
+#   - qwen2.5:7b    : Best quality/speed balance, good at following instructions
+#   - llama3.1:8b   : Strong general performance
+#   - mistral:7b    : Fast inference, good for long context
+#   - gemma2:9b     : Google's efficient model
+# To use: ollama pull <model_name>
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # DeepSeek
 DEEPSEEK_MODEL = "deepseek-chat"
