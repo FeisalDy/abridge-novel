@@ -65,7 +65,7 @@ from prefilter import prefilter_chapter, PrefilterResult
 # Configuration
 # --------------------------------------------------
 
-llm = create_llm()
+llm = create_llm(stage="chapter")
 
 RAW_BASE_DIR = "data/raw"
 OUTPUT_BASE_DIR = "data/chapters_condensed"

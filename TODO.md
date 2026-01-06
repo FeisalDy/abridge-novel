@@ -13,19 +13,25 @@
 * [x] Replace large LLM usage with a local 7B–9B compression model
   *Restrict the model to chapter-local condensation only.*
   **DONE (2026-01-06):** Implemented `ollama_llm.py`. Supports local 7B-9B models (qwen2.5:7b, llama3.1:8b, mistral:7b, gemma2:9b). Use with `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:7b`.
-* [ ] Enforce strict “no inference / no reordering” editor constraints at this stage
+* [x] Enforce strict “no inference / no reordering” editor constraints at this stage
   *Chapter output must preserve original chronology and causality.*
+  **DONE (2026-01-06):** Added explicit prohibitions to BASE_CONDENSATION_PROMPT in `prompt.py`: no reordering events, no inferring unstated info, no inventing motives/feelings/outcomes.
 * [ ] Add automatic retry with stricter prompt if validation fails
   *Do not escalate model size.*
+  **BLOCKED (2026-01-06):** Requires validation logic (TODOs lines 62-65) which is not yet implemented. Guardrails are observational only.
 
 ---
 
 ### Structural Scaffolding
 
-* [ ] Extract and persist per-chapter character lists
+* [x] Extract and persist per-chapter character lists
+  **DONE (2026-01-06):** Implemented in `character_indexing.py`. Structure stores `character → chapters_present` (functionally equivalent; can derive chapter→characters programmatically).
 * [ ] Extract and persist per-chapter event lists
+  **SKIPPED (2026-01-06):** Requires LLM-based semantic extraction (adds cost). Current `event_keywords.py` provides lexical keyword signals only.
 * [ ] Extract and persist decision → outcome pairs where present
+  **SKIPPED (2026-01-06):** Requires LLM-based semantic extraction (similar to event lists).
 * [ ] Require all extracted elements to appear in condensed output
+  **BLOCKED (2026-01-06):** Depends on event lists and decision→outcome extraction which are not implemented.
 
 ---
 
@@ -40,10 +46,14 @@
 
 ### Arc Condensation (Stage 2)
 
-* [ ] Define deterministic arc grouping rules (fixed chapter counts or volumes)
-* [ ] Merge condensed chapters within each arc before re-condensation
-* [ ] Use mid-tier model or limited cloud LLM only at this stage
-* [ ] Remove cross-chapter redundancy without altering event order
+* [x] Define deterministic arc grouping rules (fixed chapter counts or volumes)
+  **DONE (2026-01-06):** Implemented in `arc_condensation.py` with `CHAPTERS_PER_ARC = 10`. Deterministic processing via sorted chapter files.
+* [x] Merge condensed chapters within each arc before re-condensation
+  **DONE (2026-01-06):** Implemented in `arc_condensation.py` lines 137-144. Chapters merged with double newline separator before sending to LLM.
+* [x] Use mid-tier model or limited cloud LLM only at this stage
+  **DONE (2026-01-06):** Implemented stage-specific model selection. Each stage passes its name to `create_llm(stage)`. Use env vars `CHAPTER_LLM_PROVIDER`, `ARC_LLM_PROVIDER`, `NOVEL_LLM_PROVIDER` to override per-stage.
+* [x] Remove cross-chapter redundancy without altering event order
+  **DONE (2026-01-06):** Handled by BASE_CONDENSATION_PROMPT which includes "no reordering" and "remove repetition" constraints.
 
 ---
 

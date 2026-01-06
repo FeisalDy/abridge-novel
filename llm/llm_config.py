@@ -15,6 +15,25 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "cerebras")
 if LLM_PROVIDER not in SUPPORTED_PROVIDERS:
     raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
+# Stage-specific LLM provider overrides (optional)
+# If set, overrides the global LLM_PROVIDER for that specific stage.
+# This enables tiered model selection:
+#   - Chapter: Small local model (7B-9B) for cost efficiency
+#   - Arc: Mid-tier model for cross-chapter coherence
+#   - Novel: Premium model for final global pass
+CHAPTER_LLM_PROVIDER = os.getenv("CHAPTER_LLM_PROVIDER")
+ARC_LLM_PROVIDER = os.getenv("ARC_LLM_PROVIDER")
+NOVEL_LLM_PROVIDER = os.getenv("NOVEL_LLM_PROVIDER")
+
+# Validate stage-specific providers if set
+for stage_name, stage_provider in [
+    ("CHAPTER_LLM_PROVIDER", CHAPTER_LLM_PROVIDER),
+    ("ARC_LLM_PROVIDER", ARC_LLM_PROVIDER),
+    ("NOVEL_LLM_PROVIDER", NOVEL_LLM_PROVIDER),
+]:
+    if stage_provider is not None and stage_provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"Unsupported {stage_name}: {stage_provider}")
+
 # Shared config
 TEMPERATURE = 0.2
 MAX_TOKENS = 4096

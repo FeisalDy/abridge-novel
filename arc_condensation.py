@@ -18,7 +18,7 @@ CHAPTERS_PER_ARC = 10
 # LLM setup
 # --------------------------------------------------
 
-llm = create_llm()
+llm = create_llm(stage="arc")
 
 # Maximum retries for LLM calls before failing
 MAX_LLM_RETRIES = 3

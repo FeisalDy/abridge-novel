@@ -39,7 +39,7 @@ MAX_INPUT_FOR_OUTPUT_BUDGET = int(SAFE_OUTPUT_TOKEN_BUDGET / ESTIMATED_COMPRESSI
 # LLM setup
 # --------------------------------------------------
 
-llm = create_llm()
+llm = create_llm(stage="novel")
 
 # Maximum retries for LLM calls before failing
 MAX_LLM_RETRIES = 3

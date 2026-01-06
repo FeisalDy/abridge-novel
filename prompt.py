@@ -6,6 +6,9 @@ Your task is to produce a faithful, condensed version of the provided text.
 Rules:
 - Preserve all events, actions, decisions, and outcomes.
 - Preserve chronology and causal relationships.
+- Do not reorder events or scenes from their original sequence.
+- Do not infer or add information not explicitly stated in the source text.
+- Do not invent motives, feelings, or outcomes that are not written.
 - Remove repetition, padding, and filler that do not affect outcomes.
 - Do not add opinions, evaluations, interpretations, or genre labels.
 - Do not omit events that influence future developments.
