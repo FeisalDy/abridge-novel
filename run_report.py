@@ -43,7 +43,8 @@ from typing import Optional, Any
 from dataclasses import dataclass, field, asdict
 
 from guardrails import GUARDRAIL_DB_PATH
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # --------------------------------------------------
 # Configuration

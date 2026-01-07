@@ -5,7 +5,8 @@ from llm.llm_manager import LLMManager, LLMResponse
 from openai import OpenAI
 
 from utils import extract_answer
-
+from dotenv import load_dotenv
+load_dotenv()
 
 class OpenRouterLLM(LLMManager):
     def __init__(self, api_key:str | None = None):

@@ -1,5 +1,7 @@
 # llm/llm_config.py
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 SUPPORTED_PROVIDERS = {
     "gemini",

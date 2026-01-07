@@ -98,7 +98,8 @@ import json
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 from collections import defaultdict
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # --------------------------------------------------
 # Configuration

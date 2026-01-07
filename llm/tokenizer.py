@@ -26,7 +26,8 @@ from llm.llm_config import (
     VLLM_MODEL,
     OLLAMA_MODEL,
 )
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # --------------------------------------------------
 # Tokenizer cache and initialization

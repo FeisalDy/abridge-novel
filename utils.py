@@ -1,7 +1,8 @@
 import os
 import re
 from typing import List, Callable, Optional
-
+from dotenv import load_dotenv
+load_dotenv()
 # --------------------------------------------------
 # Token estimation and context limit configuration
 # --------------------------------------------------

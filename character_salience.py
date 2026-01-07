@@ -82,7 +82,8 @@ import os
 import json
 from dataclasses import dataclass, field, asdict
 from typing import Optional
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # --------------------------------------------------
 # Configuration: Salience Weights

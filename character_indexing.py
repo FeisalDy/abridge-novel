@@ -80,7 +80,8 @@ import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, asdict
 from typing import Optional
-
+from dotenv import load_dotenv
+load_dotenv()
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------

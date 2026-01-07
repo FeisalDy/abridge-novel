@@ -27,7 +27,8 @@ from datetime import datetime
 from typing import Optional, Literal
 from dataclasses import dataclass
 from contextlib import contextmanager
-
+from dotenv import load_dotenv
+load_dotenv()
 # --------------------------------------------------
 # Configuration: Compression Ratio Thresholds
 # --------------------------------------------------

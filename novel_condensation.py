@@ -5,7 +5,8 @@ from llm import create_llm
 from utils import reduce_until_fit, estimate_tokens, DEFAULT_SAFE_TOKEN_LIMIT
 from guardrails import record_condensation
 from cost_tracking import record_llm_usage
-
+from dotenv import load_dotenv
+load_dotenv()
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
