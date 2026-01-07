@@ -249,6 +249,116 @@ def make_output_capped_condense_fn(stage: str, output_token_limit: int = SAFE_OU
 # Output-Aware Chunking for Multi-Part Outputs
 # --------------------------------------------------
 
+# --------------------------------------------------
+# Resume Detection (Novel-Level)
+# --------------------------------------------------
+# Novel condensation is ADAPTIVE - it may produce:
+# - Single output: novel.condensed.txt (when output fits in budget)
+# - Multi-part output: novel.part_XXX.condensed.txt + manifest.json
+#
+# Resume logic (ADAPTIVE):
+# - Check if final output exists and is complete
+# - For multi-part: check manifest.json for expected parts, verify all exist
+# - For single-part: check novel.condensed.txt exists and is non-empty
+# - If partial: identify which parts are missing and resume from there
+# - Never overwrite existing valid outputs
+
+def detect_novel_completion_status(novel_name: str) -> dict:
+    """
+    Detect the completion status of novel condensation.
+    
+    ADAPTIVE RULE: Novel condensation may produce single or multi-part output.
+    We inspect existing artifacts to determine completion state.
+    
+    Args:
+        novel_name: Name of the novel (subdirectory name)
+    
+    Returns:
+        Dictionary with:
+        - 'status': 'complete' | 'partial' | 'not_started'
+        - 'strategy': 'single_pass' | 'multi_part' | None
+        - 'total_parts': Expected number of parts (if multi-part)
+        - 'done_parts': List of existing part filenames
+        - 'missing_parts': List of missing part filenames
+        - 'manifest_exists': Whether manifest.json exists
+        - 'final_exists': Whether novel.condensed.txt exists
+    """
+    output_dir = os.path.join(NOVEL_CONDENSED_DIR, novel_name)
+    
+    result = {
+        'status': 'not_started',
+        'strategy': None,
+        'total_parts': 0,
+        'done_parts': [],
+        'missing_parts': [],
+        'manifest_exists': False,
+        'final_exists': False,
+    }
+    
+    if not os.path.isdir(output_dir):
+        return result
+    
+    # Check for manifest (indicates multi-part strategy was used)
+    manifest_path = os.path.join(output_dir, "manifest.json")
+    if os.path.isfile(manifest_path):
+        result['manifest_exists'] = True
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            
+            result['strategy'] = manifest.get('generation_strategy', 'unknown')
+            expected_parts = manifest.get('order', [])
+            result['total_parts'] = len(expected_parts)
+            
+            # Check which parts exist
+            for part_filename in expected_parts:
+                part_path = os.path.join(output_dir, part_filename)
+                if os.path.isfile(part_path) and os.path.getsize(part_path) > 0:
+                    result['done_parts'].append(part_filename)
+                else:
+                    result['missing_parts'].append(part_filename)
+            
+            # Determine completion status
+            if len(result['missing_parts']) == 0 and len(result['done_parts']) > 0:
+                result['status'] = 'complete'
+            elif len(result['done_parts']) > 0:
+                result['status'] = 'partial'
+            # else: manifest exists but no parts - treat as not_started
+            
+        except (json.JSONDecodeError, KeyError):
+            # Invalid manifest - treat as not started
+            pass
+    
+    # Check for single-file output (backward compatible)
+    final_path = os.path.join(output_dir, "novel.condensed.txt")
+    if os.path.isfile(final_path) and os.path.getsize(final_path) > 0:
+        result['final_exists'] = True
+        
+        # If no manifest but final exists, assume single-pass complete
+        if not result['manifest_exists']:
+            result['status'] = 'complete'
+            result['strategy'] = 'single_pass'
+            result['total_parts'] = 1
+            result['done_parts'] = ['novel.condensed.txt']
+    
+    return result
+
+
+def is_novel_condensation_complete(novel_name: str) -> bool:
+    """
+    Check if novel condensation is fully complete.
+    
+    This is a convenience wrapper around detect_novel_completion_status.
+    
+    Args:
+        novel_name: Name of the novel
+    
+    Returns:
+        True if condensation is complete (all expected outputs exist)
+    """
+    status = detect_novel_completion_status(novel_name)
+    return status['status'] == 'complete'
+
 def estimate_output_tokens(input_text: str) -> int:
     """
     Estimate the number of output tokens a condensation will produce.
@@ -480,6 +590,14 @@ def process_novel(novel_name: str) -> None:
     """
     Produce the final condensed novel from arc-level outputs.
     
+    RESUME SUPPORT:
+    This function automatically detects and resumes interrupted runs.
+    - Checks completion status via manifest.json or existing outputs
+    - If complete: skips processing entirely
+    - If partial multi-part: resumes missing parts only
+    - If not started: runs full condensation
+    - Existing outputs are never overwritten
+    
     OUTPUT-AWARE SCALABILITY:
     This implementation handles both input overflow (via reduce_until_fit) and
     output overflow (via output-aware chunking). The final novel may consist of
@@ -506,6 +624,8 @@ def process_novel(novel_name: str) -> None:
     - Each output chunk maps to exactly one LLM call, one cost record, one guardrail record
     - Chunking is deterministic and reproducible
     - Resume support via disk persistence
+    
+    The resume check is idempotent: running multiple times produces the same result.
     """
     input_dir = os.path.join(ARCS_CONDENSED_DIR, novel_name)
     output_dir = os.path.join(NOVEL_CONDENSED_DIR, novel_name)
@@ -523,8 +643,23 @@ def process_novel(novel_name: str) -> None:
     if not arc_files:
         raise ValueError("No arc files found")
 
-    # PROGRESS: Report total count at stage start for visibility
-    print(f"[Stage] Starting novel condensation ({len(arc_files)} arcs)")
+    # RESUME DETECTION: Check completion status before processing
+    completion_status = detect_novel_completion_status(novel_name)
+    
+    if completion_status['status'] == 'complete':
+        # Novel condensation already complete - nothing to process
+        print(f"[Stage] Novel condensation already complete ({len(arc_files)} arcs)")
+        print(f"  [Resume] Strategy: {completion_status['strategy']}")
+        print(f"  [Resume] {len(completion_status['done_parts'])} parts exist, skipping stage")
+        return
+    elif completion_status['status'] == 'partial':
+        # Partial completion detected - will resume in condense_with_output_awareness
+        print(f"[Stage] Resuming novel condensation ({len(arc_files)} arcs)")
+        print(f"  [Resume] {len(completion_status['done_parts'])}/{completion_status['total_parts']} parts done")
+        print(f"  [Resume] {len(completion_status['missing_parts'])} parts remaining")
+    else:
+        # Fresh start - no existing outputs
+        print(f"[Stage] Starting novel condensation ({len(arc_files)} arcs)")
 
     # Load all condensed arc texts as separate units
     arc_texts = []

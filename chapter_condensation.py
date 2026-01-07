@@ -75,6 +75,92 @@ OUTPUT_BASE_DIR = "data/chapters_condensed"
 MAX_LLM_RETRIES = 3
 
 
+# --------------------------------------------------
+# Resume Detection (Chapter-Level)
+# --------------------------------------------------
+# Chapters use STRICT 1:1 mapping:
+# - Input: data/raw/{novel}/{filename}.txt
+# - Output: data/chapters_condensed/{novel}/{filename}.condensed.txt
+#
+# Resume logic:
+# - Enumerate all raw chapter files
+# - Enumerate all condensed output files
+# - Compare by deterministic identifier (filename stem)
+# - Process ONLY missing chapters (those without corresponding output)
+# - Never overwrite existing outputs
+# - Never reprocess completed chapters
+
+def get_expected_output_filename(input_filename: str) -> str:
+    """Convert input filename to expected output filename."""
+    return input_filename.replace(".txt", ".condensed.txt")
+
+
+def get_input_filename_from_output(output_filename: str) -> str:
+    """Convert output filename back to input filename."""
+    return output_filename.replace(".condensed.txt", ".txt")
+
+
+def detect_missing_chapters(novel_name: str) -> tuple[list[str], list[str], list[str]]:
+    """
+    Detect which chapters are missing outputs (need processing).
+    
+    STRICT 1:1 RULE: Each raw chapter must have exactly one condensed output.
+    
+    Args:
+        novel_name: Name of the novel (subdirectory name)
+    
+    Returns:
+        Tuple of (all_chapters, done_chapters, missing_chapters) where:
+        - all_chapters: All raw chapter filenames (sorted)
+        - done_chapters: Chapters with existing valid outputs
+        - missing_chapters: Chapters without outputs (need processing)
+    
+    Raises:
+        ValueError: If input directory doesn't exist or has no chapters
+    """
+    raw_dir = os.path.join(RAW_BASE_DIR, novel_name)
+    output_dir = os.path.join(OUTPUT_BASE_DIR, novel_name)
+    
+    if not os.path.isdir(raw_dir):
+        raise ValueError(f"Raw novel directory not found: {raw_dir}")
+    
+    # Enumerate all raw chapter files (sorted for deterministic order)
+    all_chapters = sorted(
+        f for f in os.listdir(raw_dir)
+        if f.endswith(".txt")
+    )
+    
+    if not all_chapters:
+        raise ValueError(f"No chapter files found in {raw_dir}")
+    
+    # Enumerate existing output files
+    existing_outputs = set()
+    if os.path.isdir(output_dir):
+        existing_outputs = set(
+            f for f in os.listdir(output_dir)
+            if f.endswith(".condensed.txt")
+        )
+    
+    # Classify chapters as done or missing
+    done_chapters = []
+    missing_chapters = []
+    
+    for chapter_file in all_chapters:
+        expected_output = get_expected_output_filename(chapter_file)
+        if expected_output in existing_outputs:
+            # Verify output file is non-empty (corruption check)
+            output_path = os.path.join(output_dir, expected_output)
+            if os.path.getsize(output_path) > 0:
+                done_chapters.append(chapter_file)
+            else:
+                # Empty output = corrupted, needs reprocessing
+                missing_chapters.append(chapter_file)
+        else:
+            missing_chapters.append(chapter_file)
+    
+    return all_chapters, done_chapters, missing_chapters
+
+
 def run_llm(prompt: str, stage: str = "chapter", unit_id: str = "") -> str:
     """
     Run the LLM and track usage.
@@ -177,38 +263,66 @@ def condense_chapter(chapter_text: str, unit_id: str = "") -> tuple[str, Prefilt
 def process_novel(novel_name: str) -> None:
     """
     Condense all chapters of a novel.
+    
+    RESUME SUPPORT:
+    This function automatically detects and resumes interrupted runs.
+    - Chapters with existing valid outputs are skipped (never reprocessed)
+    - Only missing chapters are processed
+    - Existing outputs are never overwritten
+    - Processing order is preserved (sorted by filename)
+    
+    The resume check is idempotent: running multiple times produces the same result.
     """
     raw_dir = os.path.join(RAW_BASE_DIR, novel_name)
     output_dir = os.path.join(OUTPUT_BASE_DIR, novel_name)
 
-    if not os.path.isdir(raw_dir):
-        raise ValueError(f"Raw novel directory not found: {raw_dir}")
-
+    # RESUME DETECTION: Identify which chapters need processing
+    all_chapters, done_chapters, missing_chapters = detect_missing_chapters(novel_name)
+    
     os.makedirs(output_dir, exist_ok=True)
-
-    chapters = sorted(
-        f for f in os.listdir(raw_dir)
-        if f.endswith(".txt")
-    )
-
-    if not chapters:
-        raise ValueError("No chapter files found")
-
-    # PROGRESS: Report total count at stage start for visibility
-    total_chapters = len(chapters)
-    print(f"[Stage] Starting chapter condensation ({total_chapters} chapters)")
+    
+    total_chapters = len(all_chapters)
+    done_count = len(done_chapters)
+    missing_count = len(missing_chapters)
+    
+    # PROGRESS: Report resume state at stage start
+    if done_count > 0 and missing_count > 0:
+        # Partial completion detected - resuming
+        print(f"[Stage] Resuming chapter condensation")
+        print(f"  [Resume] {done_count}/{total_chapters} chapters already done")
+        print(f"  [Resume] {missing_count} chapters remaining")
+    elif done_count == total_chapters:
+        # All chapters already done - nothing to process
+        print(f"[Stage] Chapter condensation already complete ({total_chapters} chapters)")
+        print(f"  [Resume] All outputs exist, skipping stage")
+        return
+    else:
+        # Fresh start - no existing outputs
+        print(f"[Stage] Starting chapter condensation ({total_chapters} chapters)")
+    
+    # Only process missing chapters (resume-safe)
+    chapters_to_process = missing_chapters
     
     # Track aggregate pre-filter statistics
     total_original_paragraphs = 0
     total_dropped_paragraphs = 0
+    
+    # Track progress across the entire set (for consistent numbering)
+    # Map each chapter to its position in the full sorted list
+    chapter_positions = {ch: idx + 1 for idx, ch in enumerate(all_chapters)}
 
-    for chapter_index, filename in enumerate(chapters, start=1):
+    for processed_idx, filename in enumerate(chapters_to_process, start=1):
         input_path = os.path.join(raw_dir, filename)
-        output_filename = filename.replace(".txt", ".condensed.txt")
+        output_filename = get_expected_output_filename(filename)
         output_path = os.path.join(output_dir, output_filename)
+        
+        # Get the chapter's position in the full ordered list
+        chapter_position = chapter_positions[filename]
 
-        # PROGRESS: Per-unit progress log showing current index and total
-        print(f"[Chapter] {chapter_index} / {total_chapters} - {filename}")
+        # PROGRESS: Per-unit progress log showing:
+        # - Position in full chapter list (for context)
+        # - Progress within current batch (for resume tracking)
+        print(f"[Chapter] {chapter_position}/{total_chapters} - {filename} (batch {processed_idx}/{missing_count})")
 
         with open(input_path, "r", encoding="utf-8") as f:
             chapter_text = f.read()
@@ -238,7 +352,8 @@ def process_novel(novel_name: str) -> None:
             f.write(condensed_text)
 
     # PROGRESS: Stage completion log with pre-filter summary
-    print(f"[Stage] Finished chapter condensation ({total_chapters} chapters)")
+    if missing_count > 0:
+        print(f"[Stage] Finished chapter condensation ({missing_count} processed, {total_chapters} total)")
     if total_original_paragraphs > 0:
         overall_drop_ratio = total_dropped_paragraphs / total_original_paragraphs
         print(f"[prefilter] Total: dropped {total_dropped_paragraphs}/{total_original_paragraphs} paragraphs ({overall_drop_ratio:.1%})")
