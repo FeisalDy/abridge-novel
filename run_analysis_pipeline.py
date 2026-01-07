@@ -363,6 +363,12 @@ def run_analysis_pipeline(
         
         source_type, source_dir, source_reason = determine_data_source(novel_name, flags)
         
+        # Determine base directory for module calls (modules add novel_name themselves)
+        if source_type == "raw":
+            base_source_dir = RAW_DIR
+        else:
+            base_source_dir = CHAPTERS_CONDENSED_DIR
+        
         print(f"[Data Source] Type: {source_type.upper()}")
         print(f"[Data Source] Directory: {source_dir}")
         print(f"[Data Source] Reason: {source_reason}")
@@ -416,11 +422,11 @@ def run_analysis_pipeline(
             print("\n" + "=" * 50)
             print("[Pipeline] Tier-2: Character Surface Indexing")
             print("=" * 50)
-            # Pass source directory to character indexing
+            # Pass base source directory to character indexing
             generate_character_index(
                 novel_name=novel_name,
                 run_id=run_id,
-                source_dir=source_dir,
+                source_dir=base_source_dir,
             )
         
         # --------------------------------------------------
@@ -448,11 +454,11 @@ def run_analysis_pipeline(
             print("\n" + "=" * 50)
             print("[Pipeline] Tier-3.3: Event Keyword Surface Map")
             print("=" * 50)
-            # Pass source directory to event keywords
+            # Pass base source directory to event keywords
             generate_event_keyword_map(
                 novel_name=novel_name,
                 run_id=run_id,
-                source_dir=source_dir,
+                source_dir=base_source_dir,
             )
         
         # --------------------------------------------------
