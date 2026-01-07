@@ -115,6 +115,12 @@ CHAPTERS_CONDENSED_DIR = os.getenv(
     "data/chapters_condensed"
 )
 
+# Raw chapters directory (for analysis-first pipeline)
+RAW_CHAPTERS_DIR = os.getenv(
+    "ABRIDGE_RAW_CHAPTERS_DIR",
+    "data/raw"
+)
+
 
 # --------------------------------------------------
 # Keyword Dictionary (Versioned, Static, Curated)
@@ -414,12 +420,16 @@ def build_event_keyword_map(
     novel_name: str,
     run_id: str,
     dictionary: dict = KEYWORD_DICTIONARY,
+    source_dir: Optional[str] = None,
 ) -> EventKeywordSurfaceMap:
     """
-    Build the event keyword surface map from condensed chapters.
+    Build the event keyword surface map from chapter files.
+    
+    This can operate on either CONDENSED CHAPTERS or RAW CHAPTERS,
+    controlled by the source_dir parameter.
     
     Process:
-    1. Load all condensed chapter texts
+    1. Load all chapter texts
     2. Match keywords in each chapter
     3. Aggregate statistics across chapters
     4. Compute derived metrics
@@ -428,23 +438,38 @@ def build_event_keyword_map(
         novel_name: Name of the novel
         run_id: Current pipeline run ID
         dictionary: Keyword dictionary to use
+        source_dir: Base directory containing chapter files. Defaults to
+                    CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
         
     Returns:
         EventKeywordSurfaceMap with all computed signals
     """
-    chapters_dir = os.path.join(CHAPTERS_CONDENSED_DIR, novel_name)
+    # Default to condensed chapters for backward compatibility
+    if source_dir is None:
+        source_dir = CHAPTERS_CONDENSED_DIR
+    
+    chapters_dir = os.path.join(source_dir, novel_name)
     
     if not os.path.isdir(chapters_dir):
-        raise FileNotFoundError(f"Condensed chapters directory not found: {chapters_dir}")
+        raise FileNotFoundError(f"Chapters directory not found: {chapters_dir}")
     
     # Get sorted list of chapter files
+    # Support both .condensed.txt (condensed) and .txt (raw) extensions
     chapter_files = sorted([
         f for f in os.listdir(chapters_dir)
-        if f.endswith(".condensed.txt")
+        if f.endswith(".condensed.txt") or (f.endswith(".txt") and not f.endswith(".condensed.txt"))
     ])
     
-    if not chapter_files:
-        raise FileNotFoundError(f"No condensed chapter files found in: {chapters_dir}")
+    # Prefer .condensed.txt if both exist (shouldn't happen, but be safe)
+    condensed_files = [f for f in chapter_files if f.endswith(".condensed.txt")]
+    raw_files = [f for f in chapter_files if f.endswith(".txt") and not f.endswith(".condensed.txt")]
+    
+    if condensed_files:
+        chapter_files = condensed_files
+    elif raw_files:
+        chapter_files = raw_files
+    else:
+        raise FileNotFoundError(f"No chapter files found in: {chapters_dir}")
     
     total_chapters = len(chapter_files)
     
@@ -563,6 +588,7 @@ def save_event_keyword_map(
 def generate_event_keyword_map(
     novel_name: str,
     run_id: str,
+    source_dir: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate and save the event keyword surface map.
@@ -573,12 +599,15 @@ def generate_event_keyword_map(
     Args:
         novel_name: Name of the novel
         run_id: Current pipeline run ID
+        source_dir: Base directory containing chapter files. Defaults to
+                    CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
         
     Returns:
         Path to saved artifact, or None if generation failed
     """
     try:
-        print("\n[Event Keywords] Scanning for event keyword signals...")
+        source_label = "raw" if source_dir == RAW_CHAPTERS_DIR else "condensed"
+        print(f"\n[Event Keywords] Scanning {source_label} chapters for event keyword signals...")
         print(f"[Event Keywords] Dictionary version: {KEYWORD_DICTIONARY_VERSION}")
         print(f"[Event Keywords] Keywords in dictionary: {len(KEYWORD_DICTIONARY)}")
         
@@ -586,6 +615,7 @@ def generate_event_keyword_map(
         surface_map = build_event_keyword_map(
             novel_name=novel_name,
             run_id=run_id,
+            source_dir=source_dir,
         )
         
         # Save artifact

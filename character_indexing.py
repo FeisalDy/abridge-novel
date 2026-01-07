@@ -95,6 +95,9 @@ NOVEL_CONDENSED_DIR = "data/novel_condensed"
 # Chapters condensation directory (for per-chapter indexing)
 CHAPTERS_CONDENSED_DIR = "data/chapters_condensed"
 
+# Raw chapters directory (for analysis-first pipeline)
+RAW_CHAPTERS_DIR = "data/raw"
+
 # Minimum mentions for a single-word name to be included
 # (Multi-word names like "Li Qiye" are always included)
 MIN_SINGLE_WORD_MENTIONS = 2
@@ -351,41 +354,59 @@ def build_character_index(
     novel_name: str,
     run_id: str,
     include_co_occurrences: bool = True,
+    source_dir: Optional[str] = None,
 ) -> CharacterIndex:
     """
-    Build the character surface index from condensed chapter files.
+    Build the character surface index from chapter files.
     
-    IMPORTANT: This operates on CONDENSED CHAPTERS, not the final
-    novel condensation. This preserves chapter boundaries for
-    accurate first_seen and chapters_present data.
+    This can operate on either CONDENSED CHAPTERS or RAW CHAPTERS,
+    controlled by the source_dir parameter. This preserves chapter
+    boundaries for accurate first_seen and chapters_present data.
     
     Args:
         novel_name: Name of the novel
         run_id: Current pipeline run ID
         include_co_occurrences: Whether to calculate co-occurrence matrix
+        source_dir: Base directory containing chapter files. Defaults to
+                    CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
         
     Returns:
         CharacterIndex containing all extracted data
         
     Raises:
-        FileNotFoundError: If condensed chapters directory doesn't exist
+        FileNotFoundError: If chapters directory doesn't exist
     """
-    chapters_dir = os.path.join(CHAPTERS_CONDENSED_DIR, novel_name)
+    # Default to condensed chapters for backward compatibility
+    if source_dir is None:
+        source_dir = CHAPTERS_CONDENSED_DIR
+    
+    chapters_dir = os.path.join(source_dir, novel_name)
     
     if not os.path.isdir(chapters_dir):
         raise FileNotFoundError(
-            f"Condensed chapters directory not found: {chapters_dir}"
+            f"Chapters directory not found: {chapters_dir}"
         )
     
     # Collect all chapter files in sorted order (deterministic)
+    # Support both .condensed.txt (condensed) and .txt (raw) extensions
     chapter_files = sorted([
         f for f in os.listdir(chapters_dir)
-        if f.endswith(".condensed.txt")
+        if f.endswith(".condensed.txt") or (f.endswith(".txt") and not f.endswith(".condensed.txt"))
     ])
     
-    if not chapter_files:
+    # Prefer .condensed.txt if both exist (shouldn't happen, but be safe)
+    condensed_files = [f for f in chapter_files if f.endswith(".condensed.txt")]
+    raw_files = [f for f in chapter_files if f.endswith(".txt") and not f.endswith(".condensed.txt")]
+    
+    if condensed_files:
+        chapter_files = condensed_files
+        file_suffix = ".condensed.txt"
+    elif raw_files:
+        chapter_files = raw_files
+        file_suffix = ".txt"
+    else:
         raise FileNotFoundError(
-            f"No condensed chapter files found in: {chapters_dir}"
+            f"No chapter files found in: {chapters_dir}"
         )
     
     # Process each chapter
@@ -395,8 +416,10 @@ def build_character_index(
     name_to_first_seen = {}
     
     for chapter_file in chapter_files:
-        # Extract chapter ID from filename (e.g., "chapter_001.condensed.txt" -> "chapter_001")
-        chapter_id = chapter_file.replace(".condensed.txt", "")
+        # Extract chapter ID from filename 
+        # e.g., "chapter_001.condensed.txt" -> "chapter_001"
+        # e.g., "chapter_001.txt" -> "chapter_001"
+        chapter_id = chapter_file.replace(file_suffix, "")
         
         # Read chapter text
         chapter_path = os.path.join(chapters_dir, chapter_file)
@@ -508,6 +531,7 @@ def generate_character_index(
     novel_name: str,
     run_id: str,
     include_co_occurrences: bool = True,
+    source_dir: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate and save the character surface index.
@@ -519,18 +543,22 @@ def generate_character_index(
         novel_name: Name of the novel
         run_id: Current pipeline run ID
         include_co_occurrences: Whether to calculate co-occurrence matrix
+        source_dir: Base directory containing chapter files. Defaults to
+                    CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
         
     Returns:
         Path to the saved artifact, or None if generation failed
     """
     try:
-        print("\n[Character Index] Generating character surface index...")
+        source_label = "raw" if source_dir == RAW_CHAPTERS_DIR else "condensed"
+        print(f"\n[Character Index] Generating character surface index from {source_label} chapters...")
         
         # Build the index
         index = build_character_index(
             novel_name=novel_name,
             run_id=run_id,
             include_co_occurrences=include_co_occurrences,
+            source_dir=source_dir,
         )
         
         # Save the artifact
