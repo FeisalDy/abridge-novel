@@ -10,7 +10,7 @@ load_dotenv()
 
 class OpenRouterLLM(LLMManager):
     def __init__(self, api_key:str | None = None):
-        key = api_key or os.getenv("OPENENROUTER_API_KEY")
+        key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not key:
             raise ValueError("OpenRouterLLM requires an API key")
         self.client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=key)
@@ -40,12 +40,18 @@ class OpenRouterLLM(LLMManager):
         OpenAI-compatible APIs return usage info in response.usage.
         """
         response = self.client.chat.completions.create(
-           extra_body={},
+            extra_headers={
+                "HTTP-Referer": "http://localhost",
+                "X-Title": "Local Script",
+            },
+            extra_body={},
             model=OPENROUTER_MODEL,
-            messages=[{
+            messages=[
+                {
                 "role": "user",
                 "content": prompt
-            }]
+                }
+            ],
         )
 
         if not response.choices or len(response.choices) == 0:

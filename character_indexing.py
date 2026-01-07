@@ -236,14 +236,16 @@ def _filter_names(
         Filtered dict of name -> count
     """
     filtered = {}
-    
+
     for name, count in name_counts.items():
-        # Skip excluded words
-        if name in EXCLUDED_WORDS:
+        tokens = name.split()
+
+        # Reject names starting with excluded words
+        if tokens[0] in EXCLUDED_WORDS:
             continue
-            
-        # Multi-word names are always included
-        if ' ' in name:
+
+        # Multi-word names (after leading-token check)
+        if len(tokens) > 1:
             filtered[name] = count
         # Single-word names need minimum frequency
         elif count >= min_single_word:
