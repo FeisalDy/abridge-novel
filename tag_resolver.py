@@ -482,32 +482,6 @@ TAG_RULES = {
     },
     
     # --------------------------------------------------
-    # OVERPOWERED PROTAGONIST
-    # --------------------------------------------------
-    # Detectable through high battle keyword spread + low death mentions.
-    # System genres often correlate with OP protagonist.
-    "overpowered_protagonist": {
-        "base_score": 0.3,
-        "required": {},  # No hard gate - evidence-based
-        "boosts": [
-            # Battle spread with low death suggests winning fights
-            ("keyword_spread", ("battle", 4), 0.20),
-            # System genre often has OP mechanics
-            ("genre_present", "system", 0.15),
-            ("genre_present", "litrpg", 0.10),
-            # Xianxia/xuanhuan often feature OP cultivation
-            ("genre_present", "xianxia", 0.10),
-            ("genre_present", "xuanhuan", 0.10),
-            # Breakthrough persistence indicates power growth
-            ("keyword_spread", ("breakthrough", 4), 0.15),
-        ],
-        "penalties": [
-            # Death keyword spread suggests vulnerability, not OP
-            ("keyword_spread", ("death", 3), 0.15),
-        ],
-    },
-    
-    # --------------------------------------------------
     # BETRAYAL
     # --------------------------------------------------
     # Betrayal keyword is the direct signal.
