@@ -94,18 +94,27 @@ load_dotenv()
 
 # MENTION_WEIGHT: How much raw frequency matters (0.0-1.0)
 # Higher = more weight on characters mentioned often
-MENTION_WEIGHT = 0.5
+MENTION_WEIGHT = 0.4
 
 # COVERAGE_WEIGHT: How much narrative spread matters (0.0-1.0)
 # Higher = more weight on characters appearing across many chapters
-COVERAGE_WEIGHT = 0.3
+COVERAGE_WEIGHT = 0.2
 
 # PERSISTENCE_WEIGHT: How much early-to-late presence matters (0.0-1.0)
 # Higher = more weight on characters with sustained presence
 PERSISTENCE_WEIGHT = 0.2
 
+# EVENT_PARTICIPATION_WEIGHT: How much actor-event linkage matters (0.0-1.0)
+# Higher = more weight on characters co-occurring with event keywords
+# This distinguishes characters who ACT from those who merely APPEAR
+EVENT_PARTICIPATION_WEIGHT = 0.2
+
+# Saturation constant for event participation normalization
+# Characters linked to this many unique event types get max score (1.0)
+EVENT_PARTICIPATION_SATURATION = 10
+
 # Sanity check: weights should sum to 1.0
-assert abs(MENTION_WEIGHT + COVERAGE_WEIGHT + PERSISTENCE_WEIGHT - 1.0) < 0.001, \
+assert abs(MENTION_WEIGHT + COVERAGE_WEIGHT + PERSISTENCE_WEIGHT + EVENT_PARTICIPATION_WEIGHT - 1.0) < 0.001, \
     "Salience weights must sum to 1.0"
 
 
@@ -137,6 +146,16 @@ class CharacterSalienceEntry:
     
     WARNING: This measures TEXTUAL DOMINANCE, not narrative importance.
     A high salience score does NOT mean "main character".
+    
+    The salience_score is a weighted combination of four dimensions:
+    - mention_score: Raw frequency of name appearances
+    - coverage_score: Proportion of chapters where character appears
+    - persistence_score: Sustained presence from early to late chapters
+    - event_participation_score: Co-occurrence with event keywords
+    
+    Event participation distinguishes characters who ACT (appear near
+    event keywords like "battle", "breakthrough", "betrayal") from
+    characters who merely APPEAR in the text.
     """
     name: str
     
@@ -147,9 +166,10 @@ class CharacterSalienceEntry:
     last_seen_index: int   # 0-based chapter index
     
     # Computed dimension scores (each 0.0-1.0)
-    mention_score: float      # Normalized frequency
-    coverage_score: float     # Chapter spread
-    persistence_score: float  # Early-to-late presence
+    mention_score: float             # Normalized frequency
+    coverage_score: float            # Chapter spread
+    persistence_score: float         # Early-to-late presence
+    event_participation_score: float # Actor-event linkage
     
     # Final salience (weighted combination, 0.0-1.0)
     salience_score: float
@@ -184,7 +204,12 @@ class CharacterSalienceIndex:
         "mention": MENTION_WEIGHT,
         "coverage": COVERAGE_WEIGHT,
         "persistence": PERSISTENCE_WEIGHT,
+        "event_participation": EVENT_PARTICIPATION_WEIGHT,
     })
+    
+    # Event participation metadata
+    event_participation_enabled: bool = True
+    event_participation_saturation: int = EVENT_PARTICIPATION_SATURATION
     
     # Salience entries (sorted by rank)
     characters: list[CharacterSalienceEntry] = field(default_factory=list)
@@ -307,22 +332,62 @@ def _compute_persistence_score(
     return span_ratio * coverage_density
 
 
+def _compute_event_participation_score(
+    event_links: dict,
+    saturation: int = EVENT_PARTICIPATION_SATURATION,
+) -> float:
+    """
+    Compute event participation score from character-event links.
+    
+    This measures how many UNIQUE event types (keyword_ids) a character
+    co-occurs with. Characters linked to diverse event types are considered
+    more "active" in the narrative surface.
+    
+    Formula: min(unique_event_count / saturation, 1.0)
+    
+    The saturation constant caps the score at 1.0 to prevent characters
+    with extreme event diversity from dominating.
+    
+    WARNING: This is LEXICAL CO-OCCURRENCE, not confirmed event participation.
+    A character appearing near "death" does not mean they died or killed.
+    
+    Args:
+        event_links: Dict mapping keyword_id -> count (from Tier-2 event_links)
+        saturation: Number of unique events for max score (default: 10)
+        
+    Returns:
+        Score in [0.0, 1.0]
+    """
+    if not event_links or saturation <= 0:
+        return 0.0
+    
+    # Count unique event types (keyword_ids)
+    unique_event_count = len(event_links)
+    
+    # Normalize and clamp to [0.0, 1.0]
+    score = unique_event_count / saturation
+    return min(score, 1.0)
+
+
 def _compute_salience_score(
     mention_score: float,
     coverage_score: float,
     persistence_score: float,
+    event_participation_score: float,
 ) -> float:
     """
     Compute weighted salience score from dimension scores.
     
     Formula: (mention_score * MENTION_WEIGHT) +
              (coverage_score * COVERAGE_WEIGHT) +
-             (persistence_score * PERSISTENCE_WEIGHT)
+             (persistence_score * PERSISTENCE_WEIGHT) +
+             (event_participation_score * EVENT_PARTICIPATION_WEIGHT)
     
     Args:
         mention_score: Normalized frequency score [0.0, 1.0]
         coverage_score: Chapter spread score [0.0, 1.0]
         persistence_score: Sustained presence score [0.0, 1.0]
+        event_participation_score: Actor-event linkage score [0.0, 1.0]
         
     Returns:
         Weighted score (may exceed 1.0 before normalization)
@@ -330,7 +395,8 @@ def _compute_salience_score(
     return (
         mention_score * MENTION_WEIGHT +
         coverage_score * COVERAGE_WEIGHT +
-        persistence_score * PERSISTENCE_WEIGHT
+        persistence_score * PERSISTENCE_WEIGHT +
+        event_participation_score * EVENT_PARTICIPATION_WEIGHT
     )
 
 
@@ -422,11 +488,18 @@ def build_salience_index(
             total_chapters,
         )
         
+        # Extract event_links for this character from Tier-2 event_links data
+        # The event_links in tier2_data maps character_name -> keyword_id -> count
+        tier2_event_links = tier2_data.get("event_links", {}) or {}
+        char_event_links = tier2_event_links.get(name, {})
+        event_participation_score = _compute_event_participation_score(char_event_links)
+        
         # Compute raw salience (before final normalization)
         raw_salience = _compute_salience_score(
             mention_score,
             coverage_score,
             persistence_score,
+            event_participation_score,
         )
         
         entry = CharacterSalienceEntry(
@@ -438,6 +511,7 @@ def build_salience_index(
             mention_score=round(mention_score, 4),
             coverage_score=round(coverage_score, 4),
             persistence_score=round(persistence_score, 4),
+            event_participation_score=round(event_participation_score, 4),
             salience_score=raw_salience,  # Will normalize later
             rank=0,  # Will assign later
         )
@@ -619,7 +693,8 @@ def generate_salience_index(
                       f"salience={entry.salience_score:.3f} "
                       f"(mentions={entry.mentions}, "
                       f"coverage={entry.coverage_score:.2f}, "
-                      f"persistence={entry.persistence_score:.2f})")
+                      f"persistence={entry.persistence_score:.2f}, "
+                      f"events={entry.event_participation_score:.2f})")
         
         return output_path
         
@@ -644,7 +719,9 @@ if __name__ == "__main__":
         print('  python character_salience.py "Heaven Reincarnation" "my_run_id"')
         print('  python character_salience.py "Heaven Reincarnation" "my_run_id" "tier2_run_id"')
         print("\nSalience Formula:")
-        print(f"  salience = {MENTION_WEIGHT}*mention + {COVERAGE_WEIGHT}*coverage + {PERSISTENCE_WEIGHT}*persistence")
+        print(f"  salience = {MENTION_WEIGHT}*mention + {COVERAGE_WEIGHT}*coverage + "
+              f"{PERSISTENCE_WEIGHT}*persistence + {EVENT_PARTICIPATION_WEIGHT}*events")
+        print(f"  (event participation saturates at {EVENT_PARTICIPATION_SATURATION} unique event types)")
         print("\nThis measures TEXTUAL DOMINANCE, not narrative importance.")
         sys.exit(1)
     
