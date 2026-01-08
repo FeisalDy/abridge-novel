@@ -4,7 +4,10 @@ TAG_TAXONOMY_VERSION = "1.0.0"
 
 # Rule version: tracks rule logic changes
 # Increment when rule definitions change
-TAG_RULE_VERSION = "1.0.0"
+# v1.1.0: Actor-centric validation for marriage, betrayal
+#         Added harem mutual exclusion penalty
+#         New condition types: actor_event_match, harem_penalty
+TAG_RULE_VERSION = "1.1.0"
 
 # --------------------------------------------------
 # Tag Taxonomy (Static, Versioned)
@@ -266,6 +269,12 @@ TAG_TAXONOMY = {
 #   - "high_persistence_pair_count": Check if >= N pairs have persistence >= value
 #   - "genre_present": Check if genre is resolved with confidence >= threshold
 #   - "genre_confidence": Check if genre confidence >= specific value
+#   - "actor_event_match": (keyword_id, min_salience, min_persistence)
+#                          Check if keyword is linked to actor meeting salience OR persistence threshold
+#                          REQUIRES: Tier-2 event_links and Tier-3.3 associated_characters
+#   - "harem_penalty": threshold (float)
+#                      Returns True if harem genre confidence >= threshold (triggers penalty)
+#                      Used for mutual exclusion logic (e.g., harem vs marriage)
 #
 # DOCUMENTATION: Each rule includes inline comments explaining WHY
 # these specific evidence items were chosen.
@@ -319,11 +328,15 @@ TAG_RULES = {
     # --------------------------------------------------
     # BETRAYAL
     # --------------------------------------------------
-    # Betrayal keyword is the direct signal.
+    # Betrayal keyword MUST be linked to a salient actor to prevent
+    # background noise triggers (e.g., side character mentions).
+    # Actor validation ensures the betrayal involves main characters.
     "betrayal": {
         "base_score": 0.5,
         "required": {
-            "keyword_present": ["betrayal"],
+            # Betrayal keyword must be linked to character with salience >= 0.4
+            # OR character with relationship persistence >= 0.5
+            "actor_event_match": ("betrayal", 0.4, 0.5),
         },
         "boosts": [
             # Spread indicates recurring betrayal theme
@@ -341,21 +354,30 @@ TAG_RULES = {
     # --------------------------------------------------
     # MARRIAGE
     # --------------------------------------------------
-    # Detectable through relationship persistence + romance signals.
+    # Marriage requires actor-validated link to wedding/marriage keyword.
+    # Must be linked to a salient character to ensure protagonist involvement.
+    # MUTUAL EXCLUSION: High harem confidence applies heavy penalty,
+    # reflecting narrative shift from monogamy to polygamy.
     "marriage": {
-        "base_score": 0.3,
-        "required": {},  # Evidence-based, no hard gate
+        "base_score": 0.4,
+        "required": {
+            # High persistence pair suggests committed relationship
+            "salient_pair_persistence": 0.6,
+        },
         "boosts": [
-            # High persistence pairs suggest long-term relationship
-            ("salient_pair_persistence", 0.7, 0.25),
             # Romance genre alignment
-            ("genre_present", "romance", 0.20),
-            # Multiple persistent pairs less likely (focused relationship)
+            ("genre_present", "romance", 0.25),
+            # Very high persistence indicates marriage-level commitment
+            ("salient_pair_persistence", 0.8, 0.20),
+            # Single focused relationship (not harem)
             ("high_persistence_pair_count", (1, 0.7), 0.15),
         ],
         "penalties": [
             # Multiple high persistence pairs suggest harem, not marriage
             ("high_persistence_pair_count", (3, 0.5), 0.20),
+            # HAREM MUTUAL EXCLUSION: If harem confidence > 0.7, apply -0.5 penalty
+            # This reflects narrative shift from monogamy to polygamy
+            ("harem_penalty", 0.7, 0.50),
         ],
     },
 

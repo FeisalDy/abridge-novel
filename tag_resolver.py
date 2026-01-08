@@ -172,6 +172,10 @@ class TagEvidence:
     salient_characters: int = 0
     persistent_pairs: int = 0
     penalties_applied: list = field(default_factory=list)
+    # Actor-centric fields (Tier-3.4b v1.1.0)
+    primary_actor: str = ""  # Highest-salience character validating this tag
+    primary_actor_salience: float = 0.0
+    validating_actors: dict = field(default_factory=dict)  # keyword -> [(actor_name, salience)]
 
 
 @dataclass
@@ -185,6 +189,9 @@ class TagResult:
     base_score: float
     boosts_applied: float
     penalties_applied: float
+    # Actor attribution (Tier-3.4b v1.1.0)
+    primary_actor: str = ""
+    primary_actor_salience: float = 0.0
 
 
 @dataclass
@@ -353,6 +360,164 @@ class TagRuleEngine:
         self._characters = self.character_salience.get("characters", [])
         self._pairs = self.relationship_matrix.get("pairs", {})
         self._genres = self.genre_resolved.get("genres", {})
+        
+        # Build character salience lookup (name -> salience_score)
+        # Used for actor-centric validation (Tier-3.4b v1.1.0)
+        self._character_salience_map: dict[str, float] = {
+            c.get("name"): c.get("salience_score", 0.0)
+            for c in self._characters
+        }
+        
+        # Build relationship persistence lookup (char_name -> max_persistence)
+        # For each character, track their highest relationship persistence score
+        self._character_max_persistence: dict[str, float] = {}
+        for pair_key, pair_data in self._pairs.items():
+            persistence = pair_data.get("persistence_score", 0.0)
+            # Parse pair key format: "CharA <-> CharB"
+            if " <-> " in pair_key:
+                char_a, char_b = pair_key.split(" <-> ", 1)
+                self._character_max_persistence[char_a] = max(
+                    self._character_max_persistence.get(char_a, 0.0),
+                    persistence
+                )
+                self._character_max_persistence[char_b] = max(
+                    self._character_max_persistence.get(char_b, 0.0),
+                    persistence
+                )
+    
+    # --------------------------------------------------
+    # Actor-Centric Methods (Tier-3.4b v1.1.0)
+    # --------------------------------------------------
+    
+    def _get_actors_for_keyword(self, keyword_id: str) -> list[tuple[str, float]]:
+        """
+        Get all characters associated with a keyword and their salience scores.
+        
+        Returns list of (actor_name, salience_score) sorted by salience descending.
+        Uses Tier-3.3 associated_characters from event_keywords.
+        """
+        if keyword_id not in self._keywords:
+            return []
+        
+        keyword_data = self._keywords[keyword_id]
+        associated_chars = keyword_data.get("associated_characters", {})
+        
+        actors = []
+        for char_name, _mention_count in associated_chars.items():
+            salience = self._character_salience_map.get(char_name, 0.0)
+            actors.append((char_name, salience))
+        
+        # Sort by salience descending
+        actors.sort(key=lambda x: -x[1])
+        return actors
+    
+    def _check_actor_event_match(
+        self,
+        keyword_id: str,
+        min_salience: float = 0.0,
+        min_persistence: float = 0.0,
+    ) -> bool:
+        """
+        Check if a keyword is linked to a validated actor.
+        
+        For a tag to be "Actor Validated," the keyword must be linked to a character
+        whose salience >= min_salience, OR the character must be part of a 
+        relationship pair with persistence >= min_persistence.
+        
+        This prevents background noise triggers by ensuring genre-defining keywords
+        are associated with main characters, not side characters.
+        
+        Args:
+            keyword_id: The event keyword to check
+            min_salience: Minimum salience score required for validation
+            min_persistence: Alternative: minimum relationship persistence
+            
+        Returns:
+            True if keyword has at least one validated actor
+        """
+        actors = self._get_actors_for_keyword(keyword_id)
+        
+        for char_name, salience in actors:
+            # Check salience threshold
+            if salience >= min_salience:
+                return True
+            # Check persistence threshold (alternative validation path)
+            if min_persistence > 0:
+                char_persistence = self._character_max_persistence.get(char_name, 0.0)
+                if char_persistence >= min_persistence:
+                    return True
+        
+        return False
+    
+    def _get_validating_actors_for_keyword(
+        self,
+        keyword_id: str,
+        min_salience: float = 0.0,
+        min_persistence: float = 0.0,
+    ) -> list[tuple[str, float]]:
+        """
+        Get all actors that validate a keyword (meet salience OR persistence threshold).
+        
+        Returns list of (actor_name, salience_score) for reporting/evidence.
+        """
+        actors = self._get_actors_for_keyword(keyword_id)
+        validating = []
+        
+        for char_name, salience in actors:
+            # Check salience threshold
+            if salience >= min_salience:
+                validating.append((char_name, round(salience, 4)))
+            # Check persistence threshold (alternative path)
+            elif min_persistence > 0:
+                char_persistence = self._character_max_persistence.get(char_name, 0.0)
+                if char_persistence >= min_persistence:
+                    validating.append((char_name, round(salience, 4)))
+        
+        return validating
+    
+    def _get_primary_actor_for_keywords(
+        self,
+        keyword_ids: list[str],
+        min_salience: float = 0.0,
+    ) -> tuple[str, float]:
+        """
+        Get the highest-salience actor across multiple keywords.
+        
+        Returns (actor_name, salience_score) or ("", 0.0) if none found.
+        Used to report the "Primary Actor" for a tag.
+        """
+        best_actor = ""
+        best_salience = 0.0
+        
+        for keyword_id in keyword_ids:
+            actors = self._get_actors_for_keyword(keyword_id)
+            for char_name, salience in actors:
+                if salience >= min_salience and salience > best_salience:
+                    best_actor = char_name
+                    best_salience = salience
+        
+        return (best_actor, round(best_salience, 4))
+    
+    def _check_harem_penalty(self, threshold: float = 0.7) -> bool:
+        """
+        Check if harem genre has high confidence (for mutual exclusion logic).
+        
+        Used to apply heavy penalty to marriage tag when harem is dominant,
+        reflecting narrative shift from monogamy to polygamy.
+        
+        Args:
+            threshold: Minimum harem confidence to trigger penalty
+            
+        Returns:
+            True if harem confidence >= threshold
+        """
+        harem_data = self._genres.get("harem", {})
+        harem_confidence = harem_data.get("confidence", 0.0)
+        return harem_confidence >= threshold
+    
+    # --------------------------------------------------
+    # Standard Condition Checks
+    # --------------------------------------------------
     
     def _check_keyword_present(self, keyword_id: str) -> bool:
         """Check if a keyword exists in the event keywords data."""
@@ -455,13 +620,203 @@ class TagRuleEngine:
             genre_id, min_confidence = condition_value
             return self._check_genre_confidence(genre_id, min_confidence)
         
+        # --------------------------------------------------
+        # Actor-Centric Condition Types (Tier-3.4b v1.1.0)
+        # --------------------------------------------------
+        
+        elif condition_type == "actor_event_match":
+            # Value: (keyword_id, min_salience, min_persistence)
+            # Validates that keyword is linked to a character meeting thresholds
+            keyword_id, min_salience, min_persistence = condition_value
+            return self._check_actor_event_match(keyword_id, min_salience, min_persistence)
+        
+        elif condition_type == "harem_penalty":
+            # Value: threshold (float)
+            # Returns True if harem confidence >= threshold (triggers penalty)
+            return self._check_harem_penalty(condition_value)
+        
         return False
     
+    def _record_condition_evidence(
+        self,
+        evidence: TagEvidence,
+        condition_type: str,
+        condition_value,
+        is_required: bool = False,
+        keywords_for_actor_tracking: list = None,
+    ) -> None:
+        """
+        Record evidence from a condition into the TagEvidence object.
+        
+        Populates appropriate evidence fields based on condition type,
+        pulling actual values from the artifacts.
+        
+        Args:
+            evidence: The TagEvidence object to populate
+            condition_type: Type of condition
+            condition_value: Value of the condition
+            is_required: Whether this is from a required condition
+            keywords_for_actor_tracking: List to append keywords for primary actor detection
+        """
+        if keywords_for_actor_tracking is None:
+            keywords_for_actor_tracking = []
+            
+        if condition_type == "keyword_present":
+            keywords = condition_value if isinstance(condition_value, list) else [condition_value]
+            for kw in keywords:
+                if kw in self._keywords:
+                    if kw not in evidence.event_keywords:
+                        evidence.event_keywords.append(kw)
+                    kw_data = self._keywords[kw]
+                    # Always record spread and density
+                    spread = kw_data.get("narrative_spread", 0)
+                    density = kw_data.get("density", 0)
+                    if spread > 0:
+                        evidence.keyword_spreads[kw] = spread
+                    if density > 0:
+                        evidence.keyword_densities[kw] = round(density, 4)
+                    # Record validating actors for this keyword
+                    actors = self._get_validating_actors_for_keyword(kw, min_salience=0.3)
+                    if actors and kw not in evidence.validating_actors:
+                        evidence.validating_actors[kw] = actors
+                    # Track for primary actor
+                    keywords_for_actor_tracking.append(kw)
+        
+        elif condition_type == "category_present":
+            categories = condition_value if isinstance(condition_value, list) else [condition_value]
+            for cat in categories:
+                if cat in self._categories:
+                    if cat not in evidence.event_categories:
+                        evidence.event_categories.append(cat)
+                    # Record all keywords in this category with their data + actors
+                    for kw_id in self._categories[cat]:
+                        if kw_id not in evidence.event_keywords:
+                            evidence.event_keywords.append(kw_id)
+                        kw_data = self._keywords.get(kw_id, {})
+                        spread = kw_data.get("narrative_spread", 0)
+                        density = kw_data.get("density", 0)
+                        if spread > 0:
+                            evidence.keyword_spreads[kw_id] = spread
+                        if density > 0:
+                            evidence.keyword_densities[kw_id] = round(density, 4)
+                        # Record validating actors for this keyword
+                        actors = self._get_validating_actors_for_keyword(kw_id, min_salience=0.3)
+                        if actors and kw_id not in evidence.validating_actors:
+                            evidence.validating_actors[kw_id] = actors
+                        # Track for primary actor
+                        keywords_for_actor_tracking.append(kw_id)
+        
+        elif condition_type == "category_count":
+            category, min_count = condition_value
+            if category in self._categories:
+                if category not in evidence.event_categories:
+                    evidence.event_categories.append(category)
+                # Record all keywords in this category
+                for kw_id in self._categories.get(category, []):
+                    if kw_id not in evidence.event_keywords:
+                        evidence.event_keywords.append(kw_id)
+                    kw_data = self._keywords.get(kw_id, {})
+                    spread = kw_data.get("narrative_spread", 0)
+                    density = kw_data.get("density", 0)
+                    if spread > 0:
+                        evidence.keyword_spreads[kw_id] = spread
+                    if density > 0:
+                        evidence.keyword_densities[kw_id] = round(density, 4)
+                    # Record validating actors
+                    actors = self._get_validating_actors_for_keyword(kw_id, min_salience=0.3)
+                    if actors and kw_id not in evidence.validating_actors:
+                        evidence.validating_actors[kw_id] = actors
+                    keywords_for_actor_tracking.append(kw_id)
+        
+        elif condition_type == "actor_event_match":
+            keyword_id, min_salience, min_persistence = condition_value
+            if keyword_id in self._keywords:
+                if keyword_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(keyword_id)
+                kw_data = self._keywords[keyword_id]
+                spread = kw_data.get("narrative_spread", 0)
+                density = kw_data.get("density", 0)
+                if spread > 0:
+                    evidence.keyword_spreads[keyword_id] = spread
+                if density > 0:
+                    evidence.keyword_densities[keyword_id] = round(density, 4)
+                # Record validating actors with the specific thresholds
+                actors = self._get_validating_actors_for_keyword(keyword_id, min_salience, min_persistence)
+                if actors:
+                    evidence.validating_actors[keyword_id] = actors
+                keywords_for_actor_tracking.append(keyword_id)
+        
+        elif condition_type == "keyword_spread":
+            keyword_id, min_spread = condition_value
+            if keyword_id in self._keywords:
+                kw_data = self._keywords[keyword_id]
+                spread = kw_data.get("narrative_spread", 0)
+                density = kw_data.get("density", 0)
+                if spread > 0:
+                    evidence.keyword_spreads[keyword_id] = spread
+                if density > 0:
+                    evidence.keyword_densities[keyword_id] = round(density, 4)
+                if keyword_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(keyword_id)
+                # Record validating actors
+                actors = self._get_validating_actors_for_keyword(keyword_id, min_salience=0.3)
+                if actors and keyword_id not in evidence.validating_actors:
+                    evidence.validating_actors[keyword_id] = actors
+                keywords_for_actor_tracking.append(keyword_id)
+        
+        elif condition_type == "keyword_density":
+            keyword_id, min_density = condition_value
+            if keyword_id in self._keywords:
+                kw_data = self._keywords[keyword_id]
+                spread = kw_data.get("narrative_spread", 0)
+                density = kw_data.get("density", 0)
+                if density > 0:
+                    evidence.keyword_densities[keyword_id] = round(density, 4)
+                if spread > 0:
+                    evidence.keyword_spreads[keyword_id] = spread
+                if keyword_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(keyword_id)
+                # Record validating actors
+                actors = self._get_validating_actors_for_keyword(keyword_id, min_salience=0.3)
+                if actors and keyword_id not in evidence.validating_actors:
+                    evidence.validating_actors[keyword_id] = actors
+                keywords_for_actor_tracking.append(keyword_id)
+        
+        elif condition_type == "genre_present":
+            if condition_value in self._genres and condition_value not in evidence.genres_present:
+                evidence.genres_present.append(condition_value)
+        
+        elif condition_type == "genre_confidence":
+            genre_id, _ = condition_value
+            if genre_id in self._genres and genre_id not in evidence.genres_present:
+                evidence.genres_present.append(genre_id)
+        
+        elif condition_type == "salient_character_count":
+            min_count, min_salience = condition_value
+            count = sum(
+                1 for c in self._characters
+                if c.get("salience_score", 0) >= min_salience
+            )
+            evidence.salient_characters = max(evidence.salient_characters, count)
+        
+        elif condition_type in ("salient_pair_persistence", "high_persistence_pair_count"):
+            threshold = 0.3
+            if condition_type == "salient_pair_persistence":
+                threshold = condition_value if isinstance(condition_value, (int, float)) else 0.3
+            elif condition_type == "high_persistence_pair_count":
+                _, threshold = condition_value
+            count = sum(
+                1 for pair_data in self._pairs.values()
+                if pair_data.get("persistence_score", 0) >= threshold
+            )
+            evidence.persistent_pairs = max(evidence.persistent_pairs, count)
+
     def evaluate_tag(self, tag_id: str, rule: dict) -> TagResult:
         """
         Evaluate a single tag against its rule.
         
         Returns TagResult with confidence score and evidence.
+        Includes Actor Attribution (Tier-3.4b v1.1.0).
         """
         evidence = TagEvidence()
         required = rule.get("required", {})
@@ -469,12 +824,20 @@ class TagRuleEngine:
         penalties = rule.get("penalties", [])
         base_score = rule.get("base_score", 0.3)
         
+        # Track keywords for primary actor detection
+        all_keywords_checked: list[str] = []
+        
         # Check required evidence (hard gate)
         required_met = True
         for condition_type, condition_value in required.items():
             if not self._check_condition(condition_type, condition_value):
                 required_met = False
                 break
+            # Record evidence from required conditions
+            self._record_condition_evidence(
+                evidence, condition_type, condition_value, 
+                is_required=True, keywords_for_actor_tracking=all_keywords_checked
+            )
         
         if not required_met:
             # Required evidence missing → confidence = 0
@@ -487,6 +850,8 @@ class TagRuleEngine:
                 base_score=base_score,
                 boosts_applied=0.0,
                 penalties_applied=0.0,
+                primary_actor="",
+                primary_actor_salience=0.0,
             )
         
         # Collect evidence and apply boosts
@@ -495,35 +860,11 @@ class TagRuleEngine:
         for condition_type, condition_value, boost_score in boosts:
             if self._check_condition(condition_type, condition_value):
                 total_boosts += boost_score
-                
-                # Record evidence
-                if condition_type == "keyword_present":
-                    if isinstance(condition_value, str):
-                        evidence.event_keywords.append(condition_value)
-                elif condition_type == "category_present":
-                    if isinstance(condition_value, str):
-                        evidence.event_categories.append(condition_value)
-                elif condition_type == "keyword_spread":
-                    keyword_id, min_spread = condition_value
-                    actual_spread = self._keywords.get(keyword_id, {}).get("narrative_spread", 0)
-                    evidence.keyword_spreads[keyword_id] = actual_spread
-                elif condition_type == "keyword_density":
-                    keyword_id, min_density = condition_value
-                    actual_density = self._keywords.get(keyword_id, {}).get("density", 0)
-                    evidence.keyword_densities[keyword_id] = actual_density
-                elif condition_type == "genre_present":
-                    evidence.genres_present.append(condition_value)
-                elif condition_type == "salient_character_count":
-                    min_count, min_salience = condition_value
-                    evidence.salient_characters = sum(
-                        1 for c in self._characters
-                        if c.get("salience_score", 0) >= min_salience
-                    )
-                elif condition_type in ("salient_pair_persistence", "high_persistence_pair_count"):
-                    evidence.persistent_pairs = sum(
-                        1 for pair_data in self._pairs.values()
-                        if pair_data.get("persistence_score", 0) >= 0.5
-                    )
+            # Record evidence from all boost conditions
+            self._record_condition_evidence(
+                evidence, condition_type, condition_value, 
+                is_required=False, keywords_for_actor_tracking=all_keywords_checked
+            )
         
         # Apply penalties
         total_penalties = 0.0
@@ -537,6 +878,14 @@ class TagRuleEngine:
         confidence = base_score + total_boosts - total_penalties
         confidence = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
         
+        # Determine primary actor (highest salience actor across all checked keywords)
+        primary_actor, primary_salience = self._get_primary_actor_for_keywords(
+            all_keywords_checked,
+            min_salience=0.0  # Include all actors, report highest
+        )
+        evidence.primary_actor = primary_actor
+        evidence.primary_actor_salience = primary_salience
+        
         return TagResult(
             tag_id=tag_id,
             display_name=TAG_TAXONOMY.get(tag_id, {}).get("display_name", tag_id),
@@ -546,6 +895,8 @@ class TagRuleEngine:
             base_score=base_score,
             boosts_applied=round(total_boosts, 4),
             penalties_applied=round(total_penalties, 4),
+            primary_actor=primary_actor,
+            primary_actor_salience=primary_salience,
         )
 
 
@@ -632,6 +983,8 @@ def build_tag_resolved_map(
             result.tags[tr.tag_id] = {
                 "display_name": tr.display_name,
                 "confidence": tr.confidence,
+                "primary_actor": tr.primary_actor,
+                "primary_actor_salience": tr.primary_actor_salience,
                 "evidence": {
                     "event_keywords": tr.evidence.event_keywords,
                     "event_categories": tr.evidence.event_categories,
@@ -641,6 +994,7 @@ def build_tag_resolved_map(
                     "salient_characters": tr.evidence.salient_characters,
                     "persistent_pairs": tr.evidence.persistent_pairs,
                     "penalties_applied": tr.evidence.penalties_applied,
+                    "validating_actors": tr.evidence.validating_actors,
                 },
                 "scoring": {
                     "base_score": tr.base_score,
