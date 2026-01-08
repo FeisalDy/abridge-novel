@@ -121,7 +121,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 from dotenv import load_dotenv
-from.dict.tag_dictionary import TAG_TAXONOMY_VERSION, TAG_RULE_VERSION, TAG_TAXONOMY, TAG_RULES
+from dict.tag_dictionary import TAG_TAXONOMY_VERSION, TAG_RULE_VERSION, TAG_TAXONOMY, TAG_RULES
 load_dotenv()
 
 # --------------------------------------------------

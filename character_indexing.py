@@ -81,6 +81,15 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
+
+# Import event keyword dictionary for character-event linking
+try:
+    from dict.event_keyword_dictionary import KEYWORD_DICTIONARY, KEYWORD_DICTIONARY_VERSION
+    _KEYWORD_DICT_AVAILABLE = True
+except ImportError:
+    KEYWORD_DICTIONARY = {}
+    KEYWORD_DICTIONARY_VERSION = "unavailable"
+    _KEYWORD_DICT_AVAILABLE = False
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
@@ -182,11 +191,20 @@ class CharacterIndex:
     # Symmetric: co_occurrences["A"]["B"] == co_occurrences["B"]["A"]
     co_occurrences: Optional[dict[str, dict[str, int]]] = None
     
+    # Character-Event linking: character_name -> keyword_id -> count
+    # Records proximity-based co-occurrences between characters and event keywords.
+    # This is LEXICAL EVIDENCE, not narrative assertion.
+    event_links: Optional[dict[str, dict[str, int]]] = None
+    
+    # Keyword dictionary version for reproducibility (if event_links populated)
+    keyword_dictionary_version: Optional[str] = None
+    
     # Metadata for downstream consumers
     warnings: list[str] = field(default_factory=lambda: [
         "Names are raw strings, not resolved identities",
         "Statistics are surface-level counts, not narrative importance",
         "Co-occurrences indicate proximity, not relationships",
+        "Event links indicate keyword proximity, not event participation",
     ])
 
 
@@ -308,6 +326,66 @@ def _index_chapter(
 
 
 # --------------------------------------------------
+# Keyword pattern compilation for event linking
+# --------------------------------------------------
+
+def _compile_keyword_patterns() -> dict[str, tuple[list[re.Pattern], str]]:
+    """
+    Compile regex patterns for all keywords in the event keyword dictionary.
+    
+    Uses the same word-boundary-aware logic as event_keywords.py.
+    
+    Returns:
+        Dict mapping keyword_id -> (list of compiled patterns, category)
+    """
+    if not _KEYWORD_DICT_AVAILABLE or not KEYWORD_DICTIONARY:
+        return {}
+    
+    compiled = {}
+    
+    for keyword_id, config in KEYWORD_DICTIONARY.items():
+        terms = config.get("terms", [])
+        category = config.get("category", "uncategorized")
+        
+        patterns = []
+        for term in terms:
+            # Escape special regex chars, then add word boundaries
+            escaped = re.escape(term)
+            # Use word boundaries for whole-word matching (case-insensitive)
+            pattern = re.compile(r'\b' + escaped + r'\b', re.IGNORECASE)
+            patterns.append(pattern)
+        
+        compiled[keyword_id] = (patterns, category)
+    
+    return compiled
+
+
+def _find_keywords_in_sentence(
+    sentence: str,
+    patterns: dict[str, tuple[list[re.Pattern], str]],
+) -> set[str]:
+    """
+    Find all keyword_ids that match in a given sentence.
+    
+    Args:
+        sentence: Text to search
+        patterns: Compiled keyword patterns from _compile_keyword_patterns()
+        
+    Returns:
+        Set of keyword_ids found in the sentence
+    """
+    found_keywords = set()
+    
+    for keyword_id, (pattern_list, _category) in patterns.items():
+        for pattern in pattern_list:
+            if pattern.search(sentence):
+                found_keywords.add(keyword_id)
+                break  # One match per keyword_id is enough
+    
+    return found_keywords
+
+
+# --------------------------------------------------
 # Co-occurrence calculation
 # --------------------------------------------------
 
@@ -315,53 +393,102 @@ def _calculate_co_occurrences(
     chapters_data: list[tuple[str, dict[str, int], list[str]]],
     filtered_names: set[str],
     window_size: int = CO_OCCURRENCE_WINDOW,
-) -> dict[str, dict[str, int]]:
+    include_event_links: bool = True,
+) -> tuple[dict[str, dict[str, int]], Optional[dict[str, dict[str, int]]]]:
     """
-    Calculate sentence-window co-occurrences between names.
+    Calculate sentence-window co-occurrences between names AND between
+    names and event keywords.
     
     Two names co-occur if they appear within `window_size` sentences
     of each other. This is purely POSITIONAL - no semantic meaning.
     
-    The result is SYMMETRIC: co_occur["A"]["B"] == co_occur["B"]["A"]
+    Character-event links are calculated the same way: a character name
+    and an event keyword co-occur if they appear within `window_size`
+    sentences of each other.
+    
+    The character-character result is SYMMETRIC: co_occur["A"]["B"] == co_occur["B"]["A"]
+    The event_links result maps character_name -> keyword_id -> count.
     
     Args:
         chapters_data: List of (chapter_id, name_counts, sentences) tuples
         filtered_names: Set of names to track co-occurrences for
         window_size: Number of sentences defining the co-occurrence window
+        include_event_links: Whether to calculate character-keyword co-occurrences
         
     Returns:
-        Dict mapping name -> name -> co-occurrence count
+        Tuple of:
+        - Dict mapping name -> name -> co-occurrence count
+        - Dict mapping name -> keyword_id -> count (or None if disabled/unavailable)
     """
     co_occur = defaultdict(lambda: defaultdict(int))
+    event_links = defaultdict(lambda: defaultdict(int))
+    
+    # Compile keyword patterns if event linking is enabled
+    keyword_patterns = {}
+    if include_event_links and _KEYWORD_DICT_AVAILABLE:
+        keyword_patterns = _compile_keyword_patterns()
     
     for chapter_id, _, sentences in chapters_data:
-        # Extract names present in each sentence
+        # Extract names and keywords present in each sentence
         sentence_names = []
+        sentence_keywords = []
+        
         for sentence in sentences:
+            # Identify character names in this sentence
             names_in_sentence = set()
             for name in filtered_names:
                 if name in sentence:
                     names_in_sentence.add(name)
             sentence_names.append(names_in_sentence)
+            
+            # Identify event keywords in this sentence
+            if keyword_patterns:
+                keywords_in_sentence = _find_keywords_in_sentence(sentence, keyword_patterns)
+            else:
+                keywords_in_sentence = set()
+            sentence_keywords.append(keywords_in_sentence)
         
         # Count co-occurrences within window
         for i, names_i in enumerate(sentence_names):
             # Look at sentences within window
             window_end = min(i + window_size + 1, len(sentence_names))
+            
             for j in range(i, window_end):
                 names_j = sentence_names[j]
-                # All pairs of names across these sentences co-occur
+                keywords_j = sentence_keywords[j]
+                
+                # Character-character co-occurrences (existing logic)
                 for name_a in names_i:
                     for name_b in names_j:
                         if name_a != name_b:
                             co_occur[name_a][name_b] += 1
+                
+                # Character-keyword co-occurrences (new logic)
+                # Link names from sentence i with keywords from sentence j
+                for name in names_i:
+                    for keyword_id in keywords_j:
+                        event_links[name][keyword_id] += 1
+                
+                # Also link names from sentence j with keywords from sentence i
+                # (bidirectional window matching)
+                if i != j:
+                    keywords_i = sentence_keywords[i]
+                    for name in names_j:
+                        for keyword_id in keywords_i:
+                            event_links[name][keyword_id] += 1
     
-    # Convert to regular dict and ensure symmetry
-    result = {}
+    # Convert to regular dicts
+    co_occur_result = {}
     for name_a in co_occur:
-        result[name_a] = dict(co_occur[name_a])
+        co_occur_result[name_a] = dict(co_occur[name_a])
     
-    return result
+    event_links_result = None
+    if keyword_patterns and event_links:
+        event_links_result = {}
+        for name in event_links:
+            event_links_result[name] = dict(event_links[name])
+    
+    return co_occur_result, event_links_result
 
 
 # --------------------------------------------------
@@ -470,18 +597,32 @@ def build_character_index(
         )
         characters.append(entry)
     
-    # Calculate co-occurrences if requested
+    # Calculate co-occurrences and event links if requested
     co_occurrences = None
+    event_links = None
+    keyword_dict_version = None
+    
     if include_co_occurrences and filtered_names:
-        co_occurrences = _calculate_co_occurrences(
+        co_occur_raw, event_links_raw = _calculate_co_occurrences(
             chapters_data, filtered_names
         )
+        
         # Only include names that have co-occurrences
         co_occurrences = {
-            k: v for k, v in co_occurrences.items() if v
+            k: v for k, v in co_occur_raw.items() if v
         }
         if not co_occurrences:
             co_occurrences = None
+        
+        # Process event links
+        if event_links_raw:
+            event_links = {
+                k: v for k, v in event_links_raw.items() if v
+            }
+            if event_links:
+                keyword_dict_version = KEYWORD_DICTIONARY_VERSION
+            else:
+                event_links = None
     
     # Build final index
     index = CharacterIndex(
@@ -496,6 +637,8 @@ def build_character_index(
         total_mentions=sum(filtered_counts.values()),
         characters=characters,
         co_occurrences=co_occurrences,
+        event_links=event_links,
+        keyword_dictionary_version=keyword_dict_version,
     )
     
     return index
