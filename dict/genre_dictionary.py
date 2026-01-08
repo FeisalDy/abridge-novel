@@ -142,6 +142,9 @@ GENRE_TAXONOMY = {
 # Condition types:
 #   - "keyword_present": Check if keyword_id exists in event keywords
 #   - "category_present": Check if category exists in event keywords
+#   - "category_with_actor": Check if category has keyword linked to salient actor
+#                            Value: (category_id, min_salience) tuple
+#                            REQUIRES: Regenerated Tier-2 (event_links) and Tier-3.3 (associated_characters)
 #   - "keyword_spread": Check if keyword has narrative_spread >= value
 #   - "keyword_density": Check if keyword has density >= value
 #   - "category_count": Check if category has >= N keywords present
@@ -150,19 +153,21 @@ GENRE_TAXONOMY = {
 #
 # DOCUMENTATION: Each rule includes inline comments explaining WHY
 # these specific evidence items were chosen.
-GENRE_RULE_VERSION = "1.0.0"
+GENRE_RULE_VERSION = "1.1.0"
 GENRE_RULES = {
     # --------------------------------------------------
     # XIANXIA
     # --------------------------------------------------
     # Xianxia requires cultivation + immortality-seeking themes.
     # Strong signal: tribulation, enlightenment keywords
-    # The presence of "cultivation" category is the hard gate.
+    # The presence of "cultivation" category linked to a SALIENT ACTOR is the hard gate.
+    # This prevents false positives from side character mentions.
     "xianxia": {
         "base_score": 0.5,
         "required": {
-            # Cultivation keywords are THE defining feature of xianxia
-            "category_present": ["cultivation"],
+            # Cultivation keywords linked to salient character (salience >= 0.5)
+            # This ensures the protagonist/main character is involved in cultivation
+            "category_with_actor": ("cultivation", 0.5),
         },
         "boosts": [
             # Tribulation is iconic xianxia element
@@ -187,11 +192,12 @@ GENRE_RULES = {
     # --------------------------------------------------
     # Xuanhuan is cultivation + non-traditional elements (system, isekai)
     # Broader than xianxia, accepts western fantasy fusion
+    # Uses category_with_actor to ensure main character involvement
     "xuanhuan": {
         "base_score": 0.4,
         "required": {
-            # Cultivation is still required but can mix with other elements
-            "category_present": ["cultivation"],
+            # Cultivation linked to salient actor (slightly lower threshold)
+            "category_with_actor": ("cultivation", 0.4),
         },
         "boosts": [
             # System elements push cultivation stories toward xuanhuan
@@ -281,10 +287,13 @@ GENRE_RULES = {
     # SYSTEM / LITRPG
     # --------------------------------------------------
     # Stories with explicit game mechanics
+    # Uses category_with_actor to ensure the system is linked to a main character,
+    # not just mentioned by side characters.
     "system": {
         "base_score": 0.5,
         "required": {
-            "category_present": ["system"],
+            # System keywords linked to salient character (salience >= 0.5)
+            "category_with_actor": ("system", 0.5),
         },
         "boosts": [
             # System awakening spread indicates sustained system presence

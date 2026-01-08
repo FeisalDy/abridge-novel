@@ -160,6 +160,8 @@ class GenreEvidence:
     salient_characters: int = 0
     persistent_pairs: int = 0
     penalties_applied: list = field(default_factory=list)
+    # Validating actors for category_with_actor conditions
+    validating_actors: dict = field(default_factory=dict)  # category -> list of (actor_name, salience_score)
 
 
 @dataclass
@@ -310,6 +312,12 @@ class GenreRuleEngine:
         self._categories = self.event_keywords.get("categories_found", {})
         self._characters = self.character_salience.get("characters", [])
         self._pairs = self.relationship_matrix.get("pairs", {})
+        
+        # Build character salience lookup (name -> salience_score)
+        self._character_salience_map = {
+            c.get("name"): c.get("salience_score", 0.0)
+            for c in self._characters
+        }
 
     def _check_keyword_present(self, keyword_id: str) -> bool:
         """Check if a keyword exists in the event keywords data."""
@@ -360,6 +368,78 @@ class GenreRuleEngine:
         )
         return count >= min_count
 
+    def _is_category_actor_validated(
+        self,
+        category_id: str,
+        min_salience: float,
+    ) -> bool:
+        """
+        Check if a category has actor validation from a salient character.
+        
+        Cross-references the category's keywords with character salience data.
+        Returns True if ANY keyword in that category has an associated character
+        with salience_score >= min_salience.
+        
+        This ensures genre-defining categories are linked to main characters,
+        not just mentioned by side characters.
+        
+        Args:
+            category_id: The event keyword category to validate
+            min_salience: Minimum salience score required for validation
+            
+        Returns:
+            True if at least one keyword in the category has a salient actor
+        """
+        # Get keywords in this category
+        category_keywords = self._categories.get(category_id, [])
+        if not category_keywords:
+            return False
+        
+        # Check each keyword for salient actor association
+        for keyword_id in category_keywords:
+            keyword_data = self._keywords.get(keyword_id, {})
+            associated_characters = keyword_data.get("associated_characters", {})
+            
+            # Check if any associated character has sufficient salience
+            for char_name, _count in associated_characters.items():
+                char_salience = self._character_salience_map.get(char_name, 0.0)
+                if char_salience >= min_salience:
+                    return True
+        
+        return False
+
+    def _get_category_validating_actors(
+        self,
+        category_id: str,
+        min_salience: float,
+    ) -> list:
+        """
+        Get list of validating actors for a category.
+        
+        Returns list of (actor_name, salience_score) tuples for actors
+        that validate the category (salience >= min_salience).
+        """
+        validating_actors = []
+        category_keywords = self._categories.get(category_id, [])
+        
+        seen_actors = set()  # Avoid duplicates
+        
+        for keyword_id in category_keywords:
+            keyword_data = self._keywords.get(keyword_id, {})
+            associated_characters = keyword_data.get("associated_characters", {})
+            
+            for char_name, _count in associated_characters.items():
+                if char_name in seen_actors:
+                    continue
+                char_salience = self._character_salience_map.get(char_name, 0.0)
+                if char_salience >= min_salience:
+                    validating_actors.append((char_name, round(char_salience, 4)))
+                    seen_actors.add(char_name)
+        
+        # Sort by salience descending
+        validating_actors.sort(key=lambda x: -x[1])
+        return validating_actors
+
     def _check_condition(self, condition_type: str, condition_value) -> bool:
         """Evaluate a single condition."""
         if condition_type == "keyword_present":
@@ -371,6 +451,12 @@ class GenreRuleEngine:
             if isinstance(condition_value, list):
                 return any(self._check_category_present(cat) for cat in condition_value)
             return self._check_category_present(condition_value)
+
+        elif condition_type == "category_with_actor":
+            # Tuple: (category_id, min_salience)
+            # Validates that the category has at least one keyword linked to a salient actor
+            category_id, min_salience = condition_value
+            return self._is_category_actor_validated(category_id, min_salience)
 
         elif condition_type == "keyword_spread":
             keyword_id, min_spread = condition_value
@@ -397,6 +483,132 @@ class GenreRuleEngine:
 
         return False
 
+    def _record_condition_evidence(
+        self,
+        evidence: GenreEvidence,
+        condition_type: str,
+        condition_value,
+        is_required: bool = False,
+    ) -> None:
+        """
+        Record evidence from a condition into the GenreEvidence object.
+        
+        Populates appropriate evidence fields based on condition type,
+        pulling actual values from the artifacts.
+        
+        Args:
+            evidence: The GenreEvidence object to populate
+            condition_type: Type of condition (keyword_present, category_present, etc.)
+            condition_value: Value of the condition
+            is_required: Whether this is from a required condition (not boost)
+        """
+        if condition_type == "keyword_present":
+            keywords = condition_value if isinstance(condition_value, list) else [condition_value]
+            for kw in keywords:
+                if kw in self._keywords and kw not in evidence.event_keywords:
+                    evidence.event_keywords.append(kw)
+                    # Also record spread and density for this keyword
+                    kw_data = self._keywords[kw]
+                    if kw_data.get("narrative_spread", 0) > 0:
+                        evidence.keyword_spreads[kw] = kw_data.get("narrative_spread", 0)
+                    if kw_data.get("density", 0) > 0:
+                        evidence.keyword_densities[kw] = round(kw_data.get("density", 0), 4)
+        
+        elif condition_type == "category_present":
+            categories = condition_value if isinstance(condition_value, list) else [condition_value]
+            for cat in categories:
+                if cat in self._categories and cat not in evidence.event_categories:
+                    evidence.event_categories.append(cat)
+                    # Record all keywords in this category with their spreads/densities
+                    for kw_id in self._categories[cat]:
+                        if kw_id not in evidence.event_keywords:
+                            evidence.event_keywords.append(kw_id)
+                        kw_data = self._keywords.get(kw_id, {})
+                        if kw_data.get("narrative_spread", 0) > 0:
+                            evidence.keyword_spreads[kw_id] = kw_data.get("narrative_spread", 0)
+                        if kw_data.get("density", 0) > 0:
+                            evidence.keyword_densities[kw_id] = round(kw_data.get("density", 0), 4)
+        
+        elif condition_type == "category_with_actor":
+            category_id, min_salience = condition_value
+            if category_id in self._categories and category_id not in evidence.event_categories:
+                evidence.event_categories.append(category_id)
+            # Record keywords and their spreads/densities from this category
+            for kw_id in self._categories.get(category_id, []):
+                if kw_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(kw_id)
+                kw_data = self._keywords.get(kw_id, {})
+                if kw_data.get("narrative_spread", 0) > 0:
+                    evidence.keyword_spreads[kw_id] = kw_data.get("narrative_spread", 0)
+                if kw_data.get("density", 0) > 0:
+                    evidence.keyword_densities[kw_id] = round(kw_data.get("density", 0), 4)
+            # Record validating actors
+            actors = self._get_category_validating_actors(category_id, min_salience)
+            if actors:
+                evidence.validating_actors[category_id] = actors
+        
+        elif condition_type == "keyword_spread":
+            keyword_id, min_spread = condition_value
+            if keyword_id in self._keywords:
+                actual_spread = self._keywords[keyword_id].get("narrative_spread", 0)
+                if actual_spread > 0:
+                    evidence.keyword_spreads[keyword_id] = actual_spread
+                if keyword_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(keyword_id)
+                # Also record density
+                actual_density = self._keywords[keyword_id].get("density", 0)
+                if actual_density > 0:
+                    evidence.keyword_densities[keyword_id] = round(actual_density, 4)
+        
+        elif condition_type == "keyword_density":
+            keyword_id, min_density = condition_value
+            if keyword_id in self._keywords:
+                actual_density = self._keywords[keyword_id].get("density", 0)
+                if actual_density > 0:
+                    evidence.keyword_densities[keyword_id] = round(actual_density, 4)
+                if keyword_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(keyword_id)
+                # Also record spread
+                actual_spread = self._keywords[keyword_id].get("narrative_spread", 0)
+                if actual_spread > 0:
+                    evidence.keyword_spreads[keyword_id] = actual_spread
+        
+        elif condition_type == "category_count":
+            category, min_count = condition_value
+            if category in self._categories and category not in evidence.event_categories:
+                evidence.event_categories.append(category)
+            # Record all keywords in this category
+            for kw_id in self._categories.get(category, []):
+                if kw_id not in evidence.event_keywords:
+                    evidence.event_keywords.append(kw_id)
+                kw_data = self._keywords.get(kw_id, {})
+                if kw_data.get("narrative_spread", 0) > 0:
+                    evidence.keyword_spreads[kw_id] = kw_data.get("narrative_spread", 0)
+                if kw_data.get("density", 0) > 0:
+                    evidence.keyword_densities[kw_id] = round(kw_data.get("density", 0), 4)
+        
+        elif condition_type == "salient_character_count":
+            min_count, min_salience = condition_value
+            count = sum(
+                1 for c in self._characters
+                if c.get("salience_score", 0) >= min_salience
+            )
+            # Always record the actual count
+            evidence.salient_characters = max(evidence.salient_characters, count)
+        
+        elif condition_type in ("salient_pair_persistence", "high_persistence_pair_count"):
+            # Count pairs with meaningful persistence
+            threshold = 0.3  # Lower threshold to capture more pairs
+            if condition_type == "salient_pair_persistence":
+                threshold = condition_value
+            elif condition_type == "high_persistence_pair_count":
+                _, threshold = condition_value
+            count = sum(
+                1 for pair_data in self._pairs.values()
+                if pair_data.get("persistence_score", 0) >= threshold
+            )
+            evidence.persistent_pairs = max(evidence.persistent_pairs, count)
+
     def evaluate_genre(self, genre_id: str, rule: dict) -> GenreResult:
         """
         Evaluate a single genre against its rule.
@@ -415,6 +627,8 @@ class GenreRuleEngine:
             if not self._check_condition(condition_type, condition_value):
                 required_met = False
                 break
+            # Record evidence from required conditions
+            self._record_condition_evidence(evidence, condition_type, condition_value, is_required=True)
 
         if not required_met:
             # Required evidence missing → confidence = 0
@@ -435,33 +649,9 @@ class GenreRuleEngine:
         for condition_type, condition_value, boost_score in boosts:
             if self._check_condition(condition_type, condition_value):
                 total_boosts += boost_score
-
-                # Record evidence
-                if condition_type == "keyword_present":
-                    if isinstance(condition_value, str):
-                        evidence.event_keywords.append(condition_value)
-                elif condition_type == "category_present":
-                    if isinstance(condition_value, str):
-                        evidence.event_categories.append(condition_value)
-                elif condition_type == "keyword_spread":
-                    keyword_id, min_spread = condition_value
-                    actual_spread = self._keywords.get(keyword_id, {}).get("narrative_spread", 0)
-                    evidence.keyword_spreads[keyword_id] = actual_spread
-                elif condition_type == "keyword_density":
-                    keyword_id, min_density = condition_value
-                    actual_density = self._keywords.get(keyword_id, {}).get("density", 0)
-                    evidence.keyword_densities[keyword_id] = actual_density
-                elif condition_type == "salient_character_count":
-                    min_count, min_salience = condition_value
-                    evidence.salient_characters = sum(
-                        1 for c in self._characters
-                        if c.get("salience_score", 0) >= min_salience
-                    )
-                elif condition_type in ("salient_pair_persistence", "high_persistence_pair_count"):
-                    evidence.persistent_pairs = sum(
-                        1 for pair_data in self._pairs.values()
-                        if pair_data.get("persistence_score", 0) >= 0.5
-                    )
+            # Always record evidence from boost conditions (even if not matched)
+            # This shows what evidence was CHECKED, not just what matched
+            self._record_condition_evidence(evidence, condition_type, condition_value, is_required=False)
 
         # Apply penalties
         total_penalties = 0.0
@@ -570,6 +760,7 @@ def build_genre_resolved_map(
                     "salient_characters": gr.evidence.salient_characters,
                     "persistent_pairs": gr.evidence.persistent_pairs,
                     "penalties_applied": gr.evidence.penalties_applied,
+                    "validating_actors": gr.evidence.validating_actors,
                 },
                 "scoring": {
                     "base_score": gr.base_score,
