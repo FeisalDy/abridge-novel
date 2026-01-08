@@ -123,9 +123,19 @@ MINIMUM_CO_PRESENCE = 1
 
 # Persistence score weights
 # These control how the composite persistence score is calculated
-PERSISTENCE_RATIO_WEIGHT = 0.4    # Weight for co_presence_ratio
-PERSISTENCE_SPAN_WEIGHT = 0.3     # Weight for span coverage
-PERSISTENCE_DENSITY_WEIGHT = 0.3  # Weight for distribution density
+# Rebalanced to include shared event weight (must sum to 1.0)
+PERSISTENCE_RATIO_WEIGHT = 0.3     # Weight for co_presence_ratio
+PERSISTENCE_SPAN_WEIGHT = 0.25     # Weight for span coverage
+PERSISTENCE_DENSITY_WEIGHT = 0.25  # Weight for distribution density
+SHARED_EVENT_WEIGHT = 0.2          # Weight for shared event participation
+
+# Saturation constant for shared event normalization
+# Pairs sharing this many unique event types get max score (1.0)
+SHARED_EVENT_SATURATION = 5
+
+# Sanity check: weights should sum to 1.0
+assert abs(PERSISTENCE_RATIO_WEIGHT + PERSISTENCE_SPAN_WEIGHT + PERSISTENCE_DENSITY_WEIGHT + SHARED_EVENT_WEIGHT - 1.0) < 0.001, \
+    "Persistence weights must sum to 1.0"
 
 
 # --------------------------------------------------
@@ -159,6 +169,10 @@ class PairSignal:
     
     WARNING: These are STRUCTURAL metrics, not relationship indicators.
     High co-presence does NOT mean characters are related in the narrative.
+    
+    The persistence_score now incorporates shared event participation,
+    measuring thematic co-action (characters appearing near the same
+    event keywords) in addition to structural co-presence.
     """
     # Pair identification (alphabetically sorted for consistency)
     character_a: str
@@ -174,11 +188,15 @@ class PairSignal:
     first_co_presence_index: int
     last_co_presence_index: int
     
+    # Shared event data (from Tier-2 event_links)
+    shared_event_count: int = 0            # Count of unique keyword IDs shared by both
+    shared_event_list: list[str] = field(default_factory=list)  # The actual shared keyword IDs
+    
     # Derived signals (all 0.0-1.0)
-    co_presence_ratio: float        # co_presence / min(coverage)
-    jaccard_similarity: float       # intersection / union
-    span_ratio: float               # span / total_chapters
-    persistence_score: float        # Composite score
+    co_presence_ratio: float = 0.0        # co_presence / min(coverage)
+    jaccard_similarity: float = 0.0       # intersection / union
+    span_ratio: float = 0.0               # span / total_chapters
+    persistence_score: float = 0.0        # Composite score (includes shared events)
     
     def pair_key(self) -> str:
         """Return canonical pair key (alphabetically sorted)."""
@@ -210,7 +228,9 @@ class RelationshipSignalMatrix:
             "ratio": PERSISTENCE_RATIO_WEIGHT,
             "span": PERSISTENCE_SPAN_WEIGHT,
             "density": PERSISTENCE_DENSITY_WEIGHT,
+            "shared_event": SHARED_EVENT_WEIGHT,
         },
+        "shared_event_saturation": SHARED_EVENT_SATURATION,
     })
     
     # Novel metadata
@@ -347,6 +367,7 @@ def _compute_persistence_score(
     span_ratio: float,
     co_presence_count: int,
     span: int,
+    shared_event_score: float = 0.0,
 ) -> float:
     """
     Compute composite persistence score.
@@ -355,11 +376,13 @@ def _compute_persistence_score(
     - High co-presence ratio (characters appear together when either appears)
     - Wide narrative span (co-presence spans the story)
     - Distributed presence (not clustered in one section)
+    - Shared event participation (thematic co-action)
     
     Formula:
         persistence = (ratio_weight * co_presence_ratio) +
                       (span_weight * span_ratio) +
-                      (density_weight * density_factor)
+                      (density_weight * density_factor) +
+                      (shared_event_weight * shared_event_score)
     
     Where density_factor = co_presence_count / span (how densely they co-appear)
     
@@ -372,7 +395,8 @@ def _compute_persistence_score(
     score = (
         PERSISTENCE_RATIO_WEIGHT * co_presence_ratio +
         PERSISTENCE_SPAN_WEIGHT * span_ratio +
-        PERSISTENCE_DENSITY_WEIGHT * density_factor
+        PERSISTENCE_DENSITY_WEIGHT * density_factor +
+        SHARED_EVENT_WEIGHT * shared_event_score
     )
     
     # Clamp to [0.0, 1.0]
@@ -385,17 +409,29 @@ def compute_pair_signal(
     chapters_a: set[str],
     chapters_b: set[str],
     total_chapters: int,
+    event_links_a: Optional[dict] = None,
+    event_links_b: Optional[dict] = None,
 ) -> Optional[PairSignal]:
     """
     Compute all co-presence signals for a character pair.
     
     Returns None if co-presence is below minimum threshold.
+    
+    Args:
+        name_a: First character name
+        name_b: Second character name
+        chapters_a: Set of chapter IDs where character A appears
+        chapters_b: Set of chapter IDs where character B appears
+        total_chapters: Total number of chapters in the novel
+        event_links_a: Dict mapping keyword_id -> count for character A (from Tier-2)
+        event_links_b: Dict mapping keyword_id -> count for character B (from Tier-2)
     """
     # Ensure canonical ordering
     char_a, char_b = _canonical_pair_key(name_a, name_b)
     if char_a == name_b:
-        # Swap chapter sets to match canonical order
+        # Swap chapter sets and event_links to match canonical order
         chapters_a, chapters_b = chapters_b, chapters_a
+        event_links_a, event_links_b = event_links_b, event_links_a
     
     # Compute basic metrics
     co_count, cov_a, cov_b, co_chapters = _compute_co_presence_metrics(
@@ -411,8 +447,20 @@ def compute_pair_signal(
     jaccard = _compute_jaccard_similarity(co_count, cov_a, cov_b)
     first_idx, last_idx, span_ratio = _compute_span_metrics(co_chapters, total_chapters)
     
+    # Compute shared event data
+    event_links_a = event_links_a or {}
+    event_links_b = event_links_b or {}
+    shared_events = set(event_links_a.keys()) & set(event_links_b.keys())
+    shared_event_count = len(shared_events)
+    shared_event_list = sorted(shared_events)  # Sorted for determinism
+    
+    # Compute shared event score (normalized, capped at 1.0)
+    shared_event_score = min(shared_event_count / SHARED_EVENT_SATURATION, 1.0)
+    
     span = last_idx - first_idx + 1 if co_chapters else 0
-    persistence = _compute_persistence_score(co_ratio, span_ratio, co_count, span)
+    persistence = _compute_persistence_score(
+        co_ratio, span_ratio, co_count, span, shared_event_score
+    )
     
     return PairSignal(
         character_a=char_a,
@@ -423,6 +471,8 @@ def compute_pair_signal(
         union_coverage=cov_a + cov_b - co_count,
         first_co_presence_index=first_idx,
         last_co_presence_index=last_idx,
+        shared_event_count=shared_event_count,
+        shared_event_list=shared_event_list,
         co_presence_ratio=round(co_ratio, 4),
         jaccard_similarity=round(jaccard, 4),
         span_ratio=round(span_ratio, 4),
@@ -451,6 +501,9 @@ def build_relationship_matrix(
         c["name"]: set(c.get("chapters_present", []))
         for c in tier2_data.get("characters", [])
     }
+    
+    # Extract event_links from Tier-2 (character_name -> keyword_id -> count)
+    tier2_event_links = tier2_data.get("event_links", {}) or {}
 
     # 2. Extract salience scores from Tier-3.1
     salience_scores = {
@@ -490,11 +543,17 @@ def build_relationship_matrix(
     for name_a, name_b in combinations(included_characters, 2):
         chapters_a = tier2_characters.get(name_a, set())
         chapters_b = tier2_characters.get(name_b, set())
+        
+        # Extract event_links for each character
+        event_links_a = tier2_event_links.get(name_a, {})
+        event_links_b = tier2_event_links.get(name_b, {})
 
         signal = compute_pair_signal(
             name_a, name_b,
             chapters_a, chapters_b,
             total_chapters,
+            event_links_a=event_links_a,
+            event_links_b=event_links_b,
         )
 
         if signal is not None:
