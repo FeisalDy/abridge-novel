@@ -76,10 +76,12 @@ False negatives (missed names) are acceptable; false positives
 import os
 import re
 import json
+from math import ceil
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 from dotenv import load_dotenv
+from dict.character_index_dictionary import EXCLUDED_WORDS, DISCOURSE_WORDS
 load_dotenv()
 
 # Import event keyword dictionary for character-event linking
@@ -113,45 +115,6 @@ MIN_SINGLE_WORD_MENTIONS = 2
 # Co-occurrence window size (sentences)
 # Two names appearing within this many sentences are considered co-occurring
 CO_OCCURRENCE_WINDOW = 3
-
-# Common words to exclude from single-word name detection
-# These are frequently capitalized but rarely character names
-EXCLUDED_WORDS = frozenset({
-    # Sentence starters / common words often capitalized
-    "The", "A", "An", "This", "That", "These", "Those",
-    "He", "She", "It", "They", "We", "I", "You",
-    "His", "Her", "Its", "Their", "Our", "My", "Your",
-    "What", "When", "Where", "Why", "How", "Who", "Which",
-    "If", "Then", "But", "And", "Or", "So", "Yet", "For",
-    "After", "Before", "During", "While", "As", "Since",
-    "However", "Therefore", "Thus", "Hence", "Meanwhile",
-    "Chapter", "Part", "Section", "Book", "Volume", "Arc",
-    # Common titles (we want "Yu Canghai" not just "Master")
-    "Master", "Lord", "Lady", "Sir", "Madam", "Elder", "Senior",
-    "Junior", "Young", "Old", "Grand", "Great", "Divine",
-    # Directions and locations often capitalized
-    "North", "South", "East", "West", "Central",
-    "Mountain", "River", "Valley", "Palace", "Hall", "Sect",
-    # Time references
-    "Today", "Tomorrow", "Yesterday", "Now", "Later",
-    # Additional common sentence starters / prepositions
-    "In", "On", "At", "By", "To", "From", "With", "Within",
-    "Through", "Into", "Upon", "Across", "Along", "Among",
-    "Between", "Beyond", "Over", "Under", "Above", "Below",
-    "Here", "There", "Once", "Eventually", "Finally", "Suddenly",
-    "Each", "Every", "Both", "All", "Some", "Many", "Few",
-    "First", "Second", "Third", "Next", "Last", "Final",
-    # Common adjectives that may be capitalized
-    "Good", "Evil", "True", "False", "Real", "Pure", "Dark", "Light",
-    "Strong", "Weak", "High", "Low", "Deep", "Wide", "Long", "Short",
-    # Miscellaneous
-    "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
-    "Nine", "Ten", "Hundred", "Thousand", "Million",
-    "Still", "Just", "Only", "Even", "Also", "Already", "Although", "Accidental",
-    "Amidst", "Analyst", "Amid", "Awkward", "Being", "Because", "Everyone", "Experiments",
-
-})
-
 
 # --------------------------------------------------
 # Data structures
@@ -244,44 +207,55 @@ def _filter_names(
 ) -> dict[str, int]:
     """
     Filter potential names to reduce false positives.
-    
-    Rules:
-    1. Multi-word names (e.g., "Li Qiye") are always kept
-    2. Single-word names must appear >= min_single_word times
-    3. Excluded common words are removed
-    
-    Args:
-        name_counts: Counter of potential name -> occurrence count
-        min_single_word: Minimum mentions for single-word names
-        
-    Returns:
-        Filtered dict of name -> count
+
+    Conservative rules:
+    1. Reject invalid casing early
+    2. Reject discourse/sentence-leading words
+    3. Multi-word names are always kept (after exclusions)
+    4. Single-word names require frequency AND dominance
     """
+
     filtered = {}
+
+    # Step 1: detect compound-name heads (e.g., "Blood Emperor" → "Blood")
+    compound_heads = Counter()
+    for name in name_counts:
+        tokens = name.split()
+        if len(tokens) > 1:
+            compound_heads[tokens[0]] += 1
 
     for name, count in name_counts.items():
         tokens = name.split()
 
-        # Reject names starting with excluded words
+        # 1️⃣ Reject invalid casing (early, effective)
+        if not all(tok[0].isupper() and tok[1:].islower() for tok in tokens):
+            continue
+
+        # 2️⃣ Reject excluded tokens
         if _contains_excluded_token(tokens):
             continue
 
-        # Multi-word names (after leading-token check)
+        # 3️⃣ Reject discourse words (single-token only)
+        if len(tokens) == 1 and tokens[0] in DISCOURSE_WORDS:
+            continue
+
+        # 4️⃣ Multi-word names: keep
         if len(tokens) > 1:
             filtered[name] = count
-
-        # Single-word names need minimum frequency
-        elif (
-                len(tokens) == 1
-                and count >= min_single_word
-                and len(tokens[0]) >= 4
-        ):
-            filtered[name] = count
-
-        # Reject weird casing artifacts
-        if not all(tok[0].isupper() and tok[1:].islower() for tok in tokens):
             continue
-    
+
+        # 5️⃣ Single-word names: frequency + length
+        token = tokens[0]
+        if len(token) < 4 or count < min_single_word:
+            continue
+
+        # 6️⃣ Demote weak roots when compounds dominate
+        # Example: "Blood" vs "Blood Emperor", "Blood God"
+        if compound_heads[token] >= 2 and count < (min_single_word * 2):
+            continue
+
+        filtered[name] = count
+
     return filtered
 
 def _normalize_text(text: str) -> str:
@@ -586,6 +560,25 @@ def build_character_index(
     filtered_counts = _filter_names(global_counts)
     filtered_names = set(filtered_counts.keys())
     
+    # --------------------------------------------------
+    # STRUCTURAL FILTER: Chapter presence threshold
+    # --------------------------------------------------
+    # Exclude names appearing in fewer than 0.5% of chapters.
+    # This is a purely statistical, deterministic filter applied
+    # AFTER name extraction and BEFORE co-occurrence calculation.
+    total_chapters = len(chapters_data)
+    min_chapters_required = max(1, ceil(total_chapters * 0.005))
+    
+    # Apply exclusion to filtered_names and filtered_counts
+    names_to_exclude = set()
+    for name in filtered_names:
+        chapters_present_count = len(name_to_chapters[name])
+        if chapters_present_count < min_chapters_required:
+            names_to_exclude.add(name)
+    
+    filtered_names = filtered_names - names_to_exclude
+    filtered_counts = {k: v for k, v in filtered_counts.items() if k not in names_to_exclude}
+    
     # Build character entries (sorted by mention count, then name for determinism)
     characters = []
     for name in sorted(filtered_names, key=lambda n: (-filtered_counts[n], n)):
@@ -631,7 +624,8 @@ def build_character_index(
         extraction_method=(
             "Conservative heuristic: capitalized word sequences, "
             f"single-word names require >= {MIN_SINGLE_WORD_MENTIONS} mentions, "
-            f"excluded common words ({len(EXCLUDED_WORDS)} patterns)"
+            f"excluded common words ({len(EXCLUDED_WORDS)} patterns). "
+            "Names appearing in fewer than 0.5% of chapters are excluded."
         ),
         total_unique_names=len(characters),
         total_mentions=sum(filtered_counts.values()),
