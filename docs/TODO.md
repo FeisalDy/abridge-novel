@@ -3,120 +3,143 @@
 
 **Last Updated:** 2026-01-06
 ---
+> **Design Principle**
+> Abridge behaves like a disciplined editor —
+> not a critic, not a reviewer, not a storyteller.
+
+---
+
 ## Core Pipeline Enhancements
 
 ### Chapter Condensation (Stage 1)
 
-* [x] Add deterministic pre-filtering to remove non-plot text
-  *Drop paragraphs with no named entities, no dialogue, and no past-tense actions.*
-  **DONE (2026-01-06):** Implemented in `prefilter.py`. Language-aware: only English text is filtered. Non-English (Chinese, CJK, etc.) passes through unchanged per editorial safety rules.
-* [x] Replace large LLM usage with a local 7B–9B compression model
-  *Restrict the model to chapter-local condensation only.*
-  **DONE (2026-01-06):** Implemented `ollama_llm.py`. Supports local 7B-9B models (qwen2.5:7b, llama3.1:8b, mistral:7b, gemma2:9b). Use with `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:7b`.
-* [x] Enforce strict “no inference / no reordering” editor constraints at this stage
-  *Chapter output must preserve original chronology and causality.*
-  **DONE (2026-01-06):** Added explicit prohibitions to BASE_CONDENSATION_PROMPT in `prompt.py`: no reordering events, no inferring unstated info, no inventing motives/feelings/outcomes.
+* [X] Add deterministic pre-filtering to remove non-plot text*Drop paragraphs with no named entities, no dialogue, and no past-tense actions.***DONE (2026-01-06):** Implemented in `prefilter.py`.Language-aware: only English text is filtered. Non-English (Chinese, CJK, etc.) passes through unchanged per editorial safety rules.
+* [X] Replace large LLM usage with a local 7B–9B compression model*Restrict the model to chapter-local condensation only.***DONE (2026-01-06):** Implemented `ollama_llm.py`.Supports local 7B–9B models (qwen2.5:7b, llama3.1:8b, mistral:7b, gemma2:9b).Use with `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:7b`.
+* [X] Enforce strict “no inference / no reordering” editor constraints*Chapter output must preserve original chronology and causality.***DONE (2026-01-06):** Added explicit prohibitions to `BASE_CONDENSATION_PROMPT` in `prompt.py`.
 * [ ] Add automatic retry with stricter prompt if validation fails
   *Do not escalate model size.*
-  **BLOCKED (2026-01-06):** Requires validation logic (TODOs lines 62-65) which is not yet implemented. Guardrails are observational only.
+  **BLOCKED (2026-01-06):** Requires validation logic (see Validation & QC section).
 
 ---
 
-### Structural Scaffolding
+## Structural Scaffolding
 
-* [x] Extract and persist per-chapter character lists
-  **DONE (2026-01-06):** Implemented in `character_indexing.py`. Structure stores `character → chapters_present` (functionally equivalent; can derive chapter→characters programmatically).
-* [ ] Extract and persist per-chapter event lists
-  **SKIPPED (2026-01-06):** Requires LLM-based semantic extraction (adds cost). Current `event_keywords.py` provides lexical keyword signals only.
-* [ ] Extract and persist decision → outcome pairs where present
-  **SKIPPED (2026-01-06):** Requires LLM-based semantic extraction (similar to event lists).
+* [X] Extract and persist per-chapter character lists**DONE (2026-01-06):** Implemented in `character_indexing.py`.Structure stores `character → chapters_present`.
+* [ ] Extract and persist per-chapter event lists**SKIPPED (2026-01-06):** Requires LLM-based semantic extraction (costly).Current `event_keywords.py` provides lexical signals only.
+* [ ] Extract and persist decision → outcome pairs**SKIPPED (2026-01-06):** Requires semantic extraction.
 * [ ] Require all extracted elements to appear in condensed output
-  **BLOCKED (2026-01-06):** Depends on event lists and decision→outcome extraction which are not implemented.
+  **BLOCKED:** Depends on event and decision extraction.
 
 ---
 
-### Translation & Input Normalization (SKIP THIS TASK, ILL DO IT LATER)
+## Translation & Input Normalization
 
-* [ ] Implement translation step for non-English raw novels
-  *Ensure all downstream stages operate on English text.*
+*(SKIP THIS TASK — handled later)*
+
+* [ ] Implement translation step for non-English novels
 * [ ] Normalize names, titles, and aliases post-translation
-  *Preserve character identity consistency.*
 
 ---
 
-### Arc Condensation (Stage 2)
+## Arc Condensation (Stage 2)
 
-* [x] Define deterministic arc grouping rules (fixed chapter counts or volumes)
-  **DONE (2026-01-06):** Implemented in `arc_condensation.py` with `CHAPTERS_PER_ARC = 10`. Deterministic processing via sorted chapter files.
-* [x] Merge condensed chapters within each arc before re-condensation
-  **DONE (2026-01-06):** Implemented in `arc_condensation.py` lines 137-144. Chapters merged with double newline separator before sending to LLM.
-* [x] Use mid-tier model or limited cloud LLM only at this stage
-  **DONE (2026-01-06):** Implemented stage-specific model selection. Each stage passes its name to `create_llm(stage)`. Use env vars `CHAPTER_LLM_PROVIDER`, `ARC_LLM_PROVIDER`, `NOVEL_LLM_PROVIDER` to override per-stage.
-* [x] Remove cross-chapter redundancy without altering event order
-  **DONE (2026-01-06):** Handled by BASE_CONDENSATION_PROMPT which includes "no reordering" and "remove repetition" constraints.
+* [X] Define deterministic arc grouping rules**DONE (2026-01-06):** `CHAPTERS_PER_ARC = 10`.
+* [X] Merge condensed chapters before re-condensation**DONE (2026-01-06):** Implemented in `arc_condensation.py`.
+* [X] Use mid-tier or limited cloud LLM only at this stage**DONE (2026-01-06):** Stage-specific model routing via `create_llm(stage)`.
+* [X] Remove cross-chapter redundancy without altering order
+  **DONE (2026-01-06):** Enforced via base prompt constraints.
 
 ---
 
-### Full Novel Condensation (Stage 3)
+## Full Novel Condensation (Stage 3)
 
-* [x] Merge all condensed arcs in strict chronological order
-  **DONE (2026-01-06):** Implemented in `novel_condensation.py` lines 518-555. Arc files are sorted alphabetically and merged with `"\n\n".join()` preserving chronological order.
-* [x] Run a single global condensation pass
-  **DONE (2026-01-06):** Implemented in `novel_condensation.py` lines 643-674. Single `output_condense_fn(combined_input)` call produces `novel.condensed.txt`. Multi-part chunking only triggers for output overflow.
-* [x] Reserve 32B-class or premium LLM usage for this step only
-  **DONE (2026-01-06):** Implemented via stage-specific model selection. Line 42: `create_llm(stage="novel")`. Use `NOVEL_LLM_PROVIDER` env var to reserve premium models. Default models (qwen-3-32b, Qwen2.5-32B) are 32B-class.
-* [x] Enforce "no further summarization" beyond rule-compliant condensation
-  **DONE (2026-01-06):** Enforced in `prompt.py` BASE_CONDENSATION_PROMPT: "Do not omit events that influence future developments" and "Do not rewrite the story into an abstract summary."
+* [X] Merge all arcs in strict chronological order**DONE (2026-01-06):** Alphabetical arc merge preserves order.
+* [X] Run a single global condensation pass**DONE (2026-01-06):** Produces `novel.condensed.txt`.
+* [X] Reserve 32B-class or premium LLMs for this step only**DONE (2026-01-06):** Controlled via `NOVEL_LLM_PROVIDER`.
+* [X] Enforce “no further summarization” rule
+  **DONE (2026-01-06):** Explicitly stated in base prompt.
 
 ---
 
-### Validation & Quality Control
+## Validation & Quality Control
 
-* [ ] Implement event coverage validation (no missing required events)
-  **BLOCKED (2026-01-06):** Requires event extraction (Structural Scaffolding TODO) which is SKIPPED due to LLM cost.
-* [ ] Implement character continuity validation
-  **BLOCKED (2026-01-06):** Requires upstream character/event extraction which is not implemented.
-* [ ] Implement chronology monotonicity checks
-  **BLOCKED (2026-01-06):** Requires event timeline extraction which is not implemented.
-* [ ] Block pipeline progression on validation failure
-  **BLOCKED (2026-01-06):** Depends on validation implementations above.
-
----
-
-### Cost & Performance Controls
-
-* [x] Track token counts per stage
-  **DONE (2026-01-06):** Implemented in `cost_tracking.py`. Each LLM call records `input_tokens`, `output_tokens`, and `stage` to SQLite via `record_llm_usage()`.
-* [x] Track cost per novel and per stage
-  **DONE (2026-01-06):** Implemented in `cost_tracking.py`. Costs estimated via `MODEL_PRICING` table and aggregated by `get_usage_summary()`. Reports printed at pipeline end.
-* [x] Prevent automatic escalation to larger models
-  **DONE (2026-01-06):** No automatic escalation exists in the codebase. Stage-specific models are explicitly configured via `CHAPTER_LLM_PROVIDER`, `ARC_LLM_PROVIDER`, `NOVEL_LLM_PROVIDER` env vars.
-* [x] Log and review retries for systematic rule violations
-  **DONE (2026-01-06):** Retries are logged to console with attempt count. MAX_LLM_RETRIES=3 in all condensation modules. Guardrail events capture compression ratio violations.
+* [ ] Implement event coverage validation**BLOCKED:** Requires event extraction.
+* [ ] Implement character continuity validation**BLOCKED:** Requires upstream extraction.
+* [ ] Implement chronology monotonicity checks**BLOCKED:** Requires event timeline extraction.
+* [ ] Block pipeline progression on validation failure**BLOCKED:** Depends on above validators.
+* [ ] Integrate genre/tag consistency audit into final QA report
+  **BLOCKED:** Depends on Feature 3.4c.
+  *Audit results are advisory only and must NOT block pipeline progression.*
 
 ---
 
-### Metadata & Separation of Concerns
+## Cost & Performance Controls
 
-* [x] Expand Genre and Tags definitions with finer sub-genres and themes
-  **DONE (2026-01-06):** Implemented in `genre_resolver.py` (15+ genres with `GENRE_TAXONOMY`) and `tag_resolver.py` (30+ tags in `TAG_TAXONOMY`). Includes sub-categories for Eastern Fantasy, System/GameLit, Relationship, Protagonist Form, etc.
-* [x] Ensure genre metadata never influences narrative condensation
-  **DONE (2026-01-06):** `prompt.py` line 13 explicitly prohibits genre labels: "Do not add opinions, evaluations, interpretations, or genre labels." Genre/tag resolvers are Tier-3 optional features that run AFTER condensation completes.
-* [x] Store metadata separately from condensed text
-  **DONE (2026-01-06):** Data directories enforce separation: condensed text in `data/chapters_condensed/`, `data/arcs_condensed/`, `data/novel_condensed/`; metadata in `data/genre_resolved/`, `data/tag_resolved/`, `data/character_salience/`, etc.
+* [X] Track token counts per stage**DONE (2026-01-06):** Implemented in `cost_tracking.py`.
+* [X] Track cost per novel and per stage**DONE (2026-01-06):** Aggregated via SQLite.
+* [X] Prevent automatic escalation to larger models**DONE (2026-01-06):** Explicit per-stage configuration only.
+* [X] Log and review retries for rule violations
+  **DONE (2026-01-06):** MAX_LLM_RETRIES=3.
+
+---
+
+## Metadata & Separation of Concerns
+
+> **Note:**
+> Genre and Tag Resolution are Feature **3.4a (Genres)** and **3.4b (Tags)**.
+> Any LLM involvement occurs **after resolution** and is strictly non-authoritative.
+
+### Feature 3.4a – Genre Resolution
+
+* [X] Expand genre taxonomy with sub-genres and themes
+  **DONE (2026-01-06):** Implemented in `genre_resolver.py`.
+
+### Feature 3.4b – Tag Resolution
+
+* [X] Expand tag taxonomy (themes, mechanics, tropes)
+  **DONE (2026-01-06):** Implemented in `tag_resolver.py`.
+
+### Feature 3.4c – Genre & Tag Validation (Tier 4, Advisory)
+
+* [ ] Implement LLM-based genre/tag consistency audit*LLM validates whether resolved genres/tags are supported by artifacts.*
+
+  **Inputs (restricted):**
+
+  - Resolved genres/tags (3.4a / 3.4b output)
+  - Keyword frequency summaries
+  - Event keyword signals
+  - Character index summaries
+
+  **LLM must NOT:**
+
+  - Add new genres or tags
+  - Remove or override resolved labels
+  - Infer events not present in artifacts
+  - Read raw novel text
+* [ ] Emit support-strength annotations*Supported / Weak / Unsupported, with cited evidence.*
+* [ ] Flag overstated or misleading labels*Warnings only.*
+* [ ] Store validation output separately`data/genre_validation/`, `data/tag_validation/`
+* [ ] Version validator prompts and schemas independently
 
 ---
 
 ## Editorial Guardrails
 
 * [ ] Version and freeze the base editor prompt
-* [ ] Document all changes to condensation rules
+* [ ] Document all rule changes
 * [ ] Add regression tests using known novels
-* [ ] Validate that condensed output remains readable as standalone narrative
+* [ ] Validate that condensed output reads as a standalone narrative
 
 ---
 
-*Reminder:
-Abridge behaves like a disciplined editor — not a critic, not a reviewer, not a storyteller.*
+## Terminology Constraints
+
+- **Resolution** determines labels (deterministic).
+- **Validation** audits evidence support (LLM-assisted).
+- Validation output is advisory, never authoritative.
 
 ---
+
+*Reminder:*
+Abridge behaves like a disciplined editor —
+not a critic, not a reviewer, not a storyteller.
