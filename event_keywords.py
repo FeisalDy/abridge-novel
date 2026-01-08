@@ -121,6 +121,12 @@ RAW_CHAPTERS_DIR = os.getenv(
     "data/raw"
 )
 
+# Character index directory (for loading Tier-2 event_links)
+CHARACTER_INDEX_DIR = os.getenv(
+    "ABRIDGE_CHARACTER_INDEX_DIR",
+    "data/character_index"
+)
+
 # --------------------------------------------------
 # Data Structures
 # --------------------------------------------------
@@ -132,6 +138,10 @@ class KeywordSignal:
     
     WARNING: This is LEXICAL data, not event confirmation.
     Keyword presence does NOT mean an event occurred.
+    
+    The associated_characters field maps character names to their
+    co-occurrence counts with this keyword (from Tier-2 event_links).
+    This enables "Personal vs Global" event classification.
     """
     keyword_id: str
     category: str
@@ -151,6 +161,11 @@ class KeywordSignal:
     # Distribution detail
     chapters_present: list[int] = field(default_factory=list)
     mentions_per_chapter: dict[int, int] = field(default_factory=dict)
+    
+    # Character attribution (from Tier-2 event_links)
+    associated_characters: dict[str, int] = field(default_factory=dict)  # character_name -> count
+    top_actor: Optional[str] = None  # Character with highest association count
+    actor_dominance: float = 0.0     # top_actor_count / total_associations (0.0-1.0)
 
 
 @dataclass
@@ -265,6 +280,7 @@ def build_event_keyword_map(
     run_id: str,
     dictionary: dict = KEYWORD_DICTIONARY,
     source_dir: Optional[str] = None,
+    event_links: Optional[dict] = None,
 ) -> EventKeywordSurfaceMap:
     """
     Build the event keyword surface map from chapter files.
@@ -277,6 +293,7 @@ def build_event_keyword_map(
     2. Match keywords in each chapter
     3. Aggregate statistics across chapters
     4. Compute derived metrics
+    5. Attribute keywords to characters using event_links
     
     Args:
         novel_name: Name of the novel
@@ -284,6 +301,8 @@ def build_event_keyword_map(
         dictionary: Keyword dictionary to use
         source_dir: Base directory containing chapter files. Defaults to
                     CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
+        event_links: Character-event links from Tier-2 (character_name -> keyword_id -> count).
+                     If provided, enables character attribution for keywords.
         
     Returns:
         EventKeywordSurfaceMap with all computed signals
@@ -367,6 +386,32 @@ def build_event_keyword_map(
             # Sort matched terms for determinism
             signal.matched_terms.sort()
     
+    # Attribute keywords to characters using event_links (if provided)
+    if event_links:
+        # event_links format: character_name -> keyword_id -> count
+        # We need to invert this to: keyword_id -> character_name -> count
+        for character_name, char_keywords in event_links.items():
+            for keyword_id, count in char_keywords.items():
+                if keyword_id in keyword_signals:
+                    signal = keyword_signals[keyword_id]
+                    # Accumulate counts per character
+                    if character_name in signal.associated_characters:
+                        signal.associated_characters[character_name] += count
+                    else:
+                        signal.associated_characters[character_name] = count
+        
+        # Compute top_actor and actor_dominance for each keyword
+        for signal in keyword_signals.values():
+            if signal.associated_characters:
+                # Find top actor (highest count)
+                top_char = max(signal.associated_characters.items(), key=lambda x: x[1])
+                signal.top_actor = top_char[0]
+                
+                # Compute actor dominance (top_actor_count / total_associations)
+                total_associations = sum(signal.associated_characters.values())
+                if total_associations > 0:
+                    signal.actor_dominance = round(top_char[1] / total_associations, 4)
+    
     # Build category summary
     categories_found: dict[str, list[str]] = defaultdict(list)
     keywords_found = 0
@@ -426,6 +471,68 @@ def save_event_keyword_map(
 
 
 # --------------------------------------------------
+# Tier-2 Data Loading
+# --------------------------------------------------
+
+def _load_tier2_event_links(
+    novel_name: str,
+    run_id: str = "",
+) -> Optional[tuple[dict, str]]:
+    """
+    Load event_links from Tier-2 Character Surface Index.
+    
+    Args:
+        novel_name: Name of the novel
+        run_id: Specific run ID to load (or empty for latest)
+        
+    Returns:
+        (event_links dict, source_run_id) tuple, or None if not found
+    """
+    index_dir = os.path.join(CHARACTER_INDEX_DIR, novel_name)
+    
+    if not os.path.isdir(index_dir):
+        return None
+    
+    # If specific run_id provided, look for that file
+    if run_id:
+        target_file = os.path.join(index_dir, f"{run_id}.character_index.json")
+        if os.path.isfile(target_file):
+            with open(target_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                event_links = data.get("event_links")
+                if event_links:
+                    return event_links, run_id
+                return None
+    
+    # Otherwise, find the most recent index file with event_links
+    index_files = [
+        f for f in os.listdir(index_dir)
+        if f.endswith(".character_index.json")
+    ]
+    
+    if not index_files:
+        return None
+    
+    # Sort by modification time (most recent first)
+    index_files.sort(
+        key=lambda f: os.path.getmtime(os.path.join(index_dir, f)),
+        reverse=True
+    )
+    
+    # Find first file with event_links
+    for index_file in index_files:
+        file_path = os.path.join(index_dir, index_file)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            event_links = data.get("event_links")
+            if event_links:
+                source_id = index_file.replace(".character_index.json", "")
+                return event_links, source_id
+    
+    return None
+
+
+# --------------------------------------------------
 # Pipeline Integration
 # --------------------------------------------------
 
@@ -433,6 +540,7 @@ def generate_event_keyword_map(
     novel_name: str,
     run_id: str,
     source_dir: Optional[str] = None,
+    tier2_run_id: str = "",
 ) -> Optional[str]:
     """
     Generate and save the event keyword surface map.
@@ -445,6 +553,7 @@ def generate_event_keyword_map(
         run_id: Current pipeline run ID
         source_dir: Base directory containing chapter files. Defaults to
                     CHAPTERS_CONDENSED_DIR. For raw chapters, pass RAW_CHAPTERS_DIR.
+        tier2_run_id: Specific Tier-2 run to use for event_links (or empty for latest)
         
     Returns:
         Path to saved artifact, or None if generation failed
@@ -455,11 +564,22 @@ def generate_event_keyword_map(
         print(f"[Event Keywords] Dictionary version: {KEYWORD_DICTIONARY_VERSION}")
         print(f"[Event Keywords] Keywords in dictionary: {len(KEYWORD_DICTIONARY)}")
         
+        # Try to load event_links from Tier-2 Character Index
+        event_links = None
+        tier2_source_id = None
+        tier2_result = _load_tier2_event_links(novel_name, tier2_run_id)
+        if tier2_result:
+            event_links, tier2_source_id = tier2_result
+            print(f"[Event Keywords] Loaded event_links from Tier-2 run: {tier2_source_id}")
+        else:
+            print("[Event Keywords] No Tier-2 event_links found - character attribution disabled")
+        
         # Build the map
         surface_map = build_event_keyword_map(
             novel_name=novel_name,
             run_id=run_id,
             source_dir=source_dir,
+            event_links=event_links,
         )
         
         # Save artifact
@@ -478,8 +598,10 @@ def generate_event_keyword_map(
                 key=lambda k: (-k.mentions, k.keyword_id)
             )
             for signal in sorted_keywords[:5]:
+                actor_info = f", actor={signal.top_actor}" if signal.top_actor else ""
+                dominance_info = f" ({signal.actor_dominance:.0%})" if signal.top_actor else ""
                 print(f"  - {signal.keyword_id}: {signal.mentions} mentions "
-                      f"(spread={signal.narrative_spread}, density={signal.density:.2f})")
+                      f"(spread={signal.narrative_spread}, density={signal.density:.2f}{actor_info}{dominance_info})")
         
         # Print categories found
         if surface_map.categories_found:
