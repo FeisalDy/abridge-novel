@@ -96,7 +96,7 @@ data/
 
 ### 3.1 Chapter Condensation
 
-**Source:** [chapter_condensation.py](chapter_condensation.py)
+**Source:** [chapter_condensation.py](../chapter_condensation.py)
 
 #### Purpose
 
@@ -147,7 +147,7 @@ Condense individual raw chapter files into shorter versions using LLM-based summ
 
 ### 3.2 Arc Condensation
 
-**Source:** [arc_condensation.py](arc_condensation.py)
+**Source:** [arc_condensation.py](../arc_condensation.py)
 
 #### Purpose
 
@@ -196,7 +196,7 @@ Group condensed chapters into arcs and produce arc-level summaries.
 
 ### 3.3 Novel Condensation
 
-**Source:** [novel_condensation.py](novel_condensation.py)
+**Source:** [novel_condensation.py](../novel_condensation.py)
 
 #### Purpose
 
@@ -250,7 +250,7 @@ def reduce_until_fit(text, max_tokens):
 
 ### 3.4 Condensation Prompt
 
-**Source:** [prompt.py](prompt.py)
+**Source:** [prompt.py](../prompt.py)
 
 #### Purpose
 
@@ -293,7 +293,7 @@ response = llm.generate(prompt)
 
 ### 4.1 Resume/Skip Flags
 
-**Source:** [run_pipeline.py](run_pipeline.py)
+**Source:** [run_pipeline.py](../run_pipeline.py)
 
 #### Purpose
 
@@ -343,7 +343,7 @@ python run_pipeline.py "Novel Name" --skip-chapters --skip-arcs --skip-novel --c
 
 ### 4.2 Cost Tracking
 
-**Source:** [cost_tracking.py](cost_tracking.py)
+**Source:** [cost_tracking.py](../cost_tracking.py)
 
 #### Purpose
 
@@ -413,7 +413,7 @@ print_usage_summary(run_id)
 
 ### 4.3 Guardrails
 
-**Source:** [guardrails.py](guardrails.py)
+**Source:** [guardrails.py](../guardrails.py)
 
 #### Purpose
 
@@ -479,7 +479,7 @@ Classifications:
 
 ### 4.4 Run Reports
 
-**Source:** [run_report.py](run_report.py)
+**Source:** [run_report.py](../run_report.py)
 
 #### Purpose
 
@@ -525,7 +525,7 @@ class RunReport:
 
 ### 5.1 Character Surface Index
 
-**Source:** [character_indexing.py](character_indexing.py)
+**Source:** [character_indexing.py](../character_indexing.py)
 
 #### Purpose
 
@@ -608,7 +608,7 @@ CO_OCCURRENCE_WINDOW = 3  # sentences
 
 ### 6.1 Character Salience
 
-**Source:** [character_salience.py](character_salience.py)
+**Source:** [character_salience.py](../character_salience.py)
 
 #### Purpose
 
@@ -700,7 +700,7 @@ persistence_score = 1 - (gap_variance / max_possible_variance)
 
 ### 6.2 Relationship Signal Matrix
 
-**Source:** [relationship_matrix.py](relationship_matrix.py)
+**Source:** [relationship_matrix.py](../relationship_matrix.py)
 
 #### Purpose
 
@@ -782,7 +782,7 @@ persistence = (RATIO_WEIGHT × co_presence_ratio) +
 
 ### 6.3 Event Keywords
 
-**Source:** [event_keywords.py](event_keywords.py)
+**Source:** [event_keywords.py](../event_keywords.py)
 
 #### Purpose
 
@@ -877,7 +877,7 @@ class KeywordSignal:
 
 ### 6.4 Genre Resolver
 
-**Source:** [genre_resolver.py](genre_resolver.py)
+**Source:** [genre_resolver.py](../genre_resolver.py)
 
 #### Purpose
 
@@ -976,7 +976,7 @@ confidence = clamp(confidence, 0.0, 1.0)
 
 ### 6.5 Tag Resolver
 
-**Source:** [tag_resolver.py](tag_resolver.py)
+**Source:** [tag_resolver.py](../tag_resolver.py)
 
 #### Purpose
 
@@ -1058,7 +1058,7 @@ TAG_RULES = {
 
 ## 7. Utilities
 
-**Source:** [utils.py](utils.py)
+**Source:** [utils.py](../utils.py)
 
 ### estimate_tokens()
 
@@ -1125,7 +1125,7 @@ def reduce_until_fit(
 
 ## 9. LLM Provider Configuration
 
-**Source:** [llm/llm_config.py](llm/llm_config.py)
+**Source:** [llm/llm_config.py](../llm/llm_config.py)
 
 ### Supported Providers
 

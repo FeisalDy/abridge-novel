@@ -435,83 +435,73 @@ def compute_pair_signal(
 # --------------------------------------------------
 
 def build_relationship_matrix(
-    tier2_data: dict,
-    tier3_1_data: dict,
-    novel_name: str,
-    run_id: str,
-    tier2_run_id: str,
-    tier3_1_run_id: str,
-    salience_threshold: float = SALIENCE_THRESHOLD,
+        tier2_data: dict,
+        tier3_1_data: dict,
+        novel_name: str,
+        run_id: str,
+        tier2_run_id: str,
+        tier3_1_run_id: str,
+        salience_threshold: float = SALIENCE_THRESHOLD,
 ) -> RelationshipSignalMatrix:
     """
-    Build the relationship signal matrix from Tier-2 and Tier-3.1 data.
-    
-    Process:
-    1. Filter characters by salience threshold
-    2. Build chapter presence sets for each character
-    3. Compute pairwise signals for all qualifying pairs
-    4. Normalize and assemble matrix
-    
-    Args:
-        tier2_data: Parsed Tier-2 Character Surface Index
-        tier3_1_data: Parsed Tier-3.1 Character Salience Index
-        novel_name: Name of the novel
-        run_id: Current pipeline run ID
-        tier2_run_id: Source Tier-2 run ID
-        tier3_1_run_id: Source Tier-3.1 run ID
-        salience_threshold: Minimum salience to include character
-        
-    Returns:
-        RelationshipSignalMatrix with all computed signals
+    Build the relationship signal matrix, sorted by character salience (rank).
     """
-    # Extract character data from Tier-2
+    # 1. Extract character data from Tier-2
     tier2_characters = {
         c["name"]: set(c.get("chapters_present", []))
         for c in tier2_data.get("characters", [])
     }
-    
-    # Extract salience scores from Tier-3.1
+
+    # 2. Extract salience scores from Tier-3.1
     salience_scores = {
         c["name"]: c.get("salience_score", 0.0)
         for c in tier3_1_data.get("characters", [])
     }
-    
+
     # Determine total chapters
     all_chapters = set()
     for chapters in tier2_characters.values():
         all_chapters.update(chapters)
     total_chapters = len(all_chapters) if all_chapters else 1
-    
-    # Filter characters by salience threshold
+
+    # 3. Filter characters by salience threshold
     included_characters = []
     excluded_characters = []
-    
+
     for name in tier2_characters:
         salience = salience_scores.get(name, 0.0)
         if salience >= salience_threshold:
             included_characters.append(name)
         else:
             excluded_characters.append(name)
-    
-    # Sort for deterministic ordering
-    included_characters.sort()
-    excluded_characters.sort()
-    
-    # Compute pairwise signals
+
+    # --- CHANGE START: SORT BY SALIENCE (RANK) ---
+    # Instead of .sort() (alphabetical), we sort by salience score descending.
+    # This ensures "Xu Mo" (1.0) comes before "Origami" (0.44).
+    included_characters.sort(key=lambda name: salience_scores.get(name, 0.0), reverse=True)
+    # --- CHANGE END ---
+
+    excluded_characters.sort()  # Keeping excluded alphabetical is fine
+
+    # 4. Compute pairwise signals
+    # Because included_characters is sorted by Rank, the combinations will
+    # follow that order: (Rank1, Rank2), (Rank1, Rank3)... (Rank2, Rank3), etc.
     pairs = {}
     for name_a, name_b in combinations(included_characters, 2):
         chapters_a = tier2_characters.get(name_a, set())
         chapters_b = tier2_characters.get(name_b, set())
-        
+
         signal = compute_pair_signal(
             name_a, name_b,
             chapters_a, chapters_b,
             total_chapters,
         )
-        
+
         if signal is not None:
+            # Note: signal.pair_key() still uses alphabetical order for the string key
+            # but the order they appear in the JSON will match our salience sort.
             pairs[signal.pair_key()] = signal
-    
+
     # Build matrix
     matrix = RelationshipSignalMatrix(
         novel_name=novel_name,
@@ -525,10 +515,9 @@ def build_relationship_matrix(
         excluded_characters=excluded_characters,
         pairs=pairs,
     )
-    
-    # Update config with actual threshold used
+
     matrix.config["salience_threshold"] = salience_threshold
-    
+
     return matrix
 
 
@@ -614,7 +603,7 @@ def save_relationship_matrix(
     # Already handled by asdict recursively
     
     with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(matrix_dict, f, indent=2, ensure_ascii=False, sort_keys=True)
+        json.dump(matrix_dict, f, indent=2, ensure_ascii=False, sort_keys=False)
     
     return output_file
 

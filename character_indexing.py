@@ -12,7 +12,6 @@ WHAT THIS IS
 ============================================================
 
 This is a STRUCTURAL, OBSERVATIONAL feature that:
-- Operates ONLY on the final condensed novel (immutable input)
 - Extracts proper names/named entities as VERBATIM STRINGS
 - Produces purely STATISTICAL, surface-level data
 - Outputs a machine-readable JSON artifact
@@ -139,7 +138,9 @@ EXCLUDED_WORDS = frozenset({
     # Miscellaneous
     "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
     "Nine", "Ten", "Hundred", "Thousand", "Million",
-    "Still", "Just", "Only", "Even", "Also", "Already",
+    "Still", "Just", "Only", "Even", "Also", "Already", "Although", "Accidental",
+    "Amidst", "Analyst", "Amid", "Awkward", "Being", "Because", "Everyone", "Experiments",
+
 })
 
 
@@ -244,18 +245,34 @@ def _filter_names(
         tokens = name.split()
 
         # Reject names starting with excluded words
-        if tokens[0] in EXCLUDED_WORDS:
+        if _contains_excluded_token(tokens):
             continue
 
         # Multi-word names (after leading-token check)
         if len(tokens) > 1:
             filtered[name] = count
+
         # Single-word names need minimum frequency
-        elif count >= min_single_word:
+        elif (
+                len(tokens) == 1
+                and count >= min_single_word
+                and len(tokens[0]) >= 4
+        ):
             filtered[name] = count
+
+        # Reject weird casing artifacts
+        if not all(tok[0].isupper() and tok[1:].islower() for tok in tokens):
+            continue
     
     return filtered
 
+def _normalize_text(text: str) -> str:
+    # Collapse all whitespace (including newlines) into single spaces
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def _contains_excluded_token(tokens: list[str]) -> bool:
+    return any(tok in EXCLUDED_WORDS for tok in tokens)
 
 # --------------------------------------------------
 # Chapter-level indexing
@@ -278,6 +295,7 @@ def _index_chapter(
         - sentence_list: list of sentences for co-occurrence calculation
     """
     # Extract potential names
+    chapter_text = _normalize_text(chapter_text)
     potential_names = _extract_potential_names(chapter_text)
     name_counts = Counter(potential_names)
     

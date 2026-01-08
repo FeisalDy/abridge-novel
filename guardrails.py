@@ -23,11 +23,11 @@ Without measurement, these failures go unnoticed until human review.
 import os
 import sqlite3
 import uuid
-from datetime import datetime
 from typing import Optional, Literal
 from dataclasses import dataclass
 from contextlib import contextmanager
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 load_dotenv()
 # --------------------------------------------------
 # Configuration: Compression Ratio Thresholds
@@ -98,7 +98,7 @@ def start_run() -> str:
     All subsequent guardrail events will be associated with this run_id.
     """
     global _current_run_id
-    _current_run_id = f"run_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    _current_run_id = f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     return _current_run_id
 
 
