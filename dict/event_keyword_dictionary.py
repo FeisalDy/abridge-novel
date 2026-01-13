@@ -11,134 +11,295 @@ Static, versioned, lexical-only.
 
 # VERSION HISTORY:
 # v1.0.0 (2024-12-31): Initial dictionary with core isekai/cultivation terms
-KEYWORD_DICTIONARY_VERSION = "1.0.0"
+# v1.0.1 (2026-01-13): Completely revamped terms for better specificity
+KEYWORD_DICTIONARY_VERSION = "1.0.1"
 
 KEYWORD_DICTIONARY = {
     # --------------------------------------------------
-    # Transmigration / Isekai Events
+    # Cultivation Realms
     # --------------------------------------------------
-    "reincarnation": {
-        "terms": ["reincarnation", "reincarnate", "reincarnated", "rebirth", "reborn"],
-        "category": "transmigration",
+    "mortal_realm": {
+        "terms": ["mortal realm", "mortal body", "mortal stage"],
+        "category": "cultivation_realm",
     },
-    "transmigration": {
-        "terms": ["transmigration", "transmigrate", "transmigrated", "soul transfer"],
-        "category": "transmigration",
+    "qi_condensation": {
+        "terms": ["qi condensation", "condensing qi", "qi gathering"],
+        "category": "cultivation_realm",
     },
-    "regression": {
-        "terms": ["regression", "regress", "regressed", "time regression", "return to the past"],
-        "category": "transmigration",
+    "foundation_establishment": {
+        "terms": ["foundation establishment", "foundation building"],
+        "category": "cultivation_realm",
     },
-    "second_chance": {
-        "terms": ["second chance", "another chance", "new life", "fresh start"],
-        "category": "transmigration",
+    "core_formation": {
+        "terms": ["core formation", "golden core"],
+        "category": "cultivation_realm",
+    },
+    "nascent_soul": {
+        "terms": ["nascent soul", "nascent soul realm"],
+        "category": "cultivation_realm",
+    },
+    "soul_transformation": {
+        "terms": ["soul transformation", "spirit transformation"],
+        "category": "cultivation_realm",
+    },
+    "void_refinement": {
+        "terms": ["void refinement", "void stage"],
+        "category": "cultivation_realm",
+    },
+    "dao_seeking": {
+        "terms": ["dao seeking", "seeking the dao"],
+        "category": "cultivation_realm",
+    },
+    "immortal_ascension": {
+        "terms": ["immortal ascension", "ascended to immortality"],
+        "category": "cultivation_realm",
+    },
+    "true_immortal": {
+        "terms": ["true immortal", "immortal realm"],
+        "category": "cultivation_realm",
+    },
+    "body_refinement": {
+        "terms": ["body tempering", "tempering stage", "fleshly body", "body refinement"],
+        "category": "cultivation_realm",
+    },
+    "blood_rebirth": {
+        "terms": ["blood rebirth", "undying body", "regeneration stage"],
+        "category": "cultivation_realm",
+    },
+    "saint_physique": {
+        "terms": ["saint physique", "godly body", "sovereign body"],
+        "category": "cultivation_realm",
+    },
+    "tribulation_transcendence": {
+        "terms": ["tribulation transcendence", "crossing tribulation", "lightning tribulation"],
+        "category": "cultivation_realm",
+    },
+    "mahayana": {
+        "terms": ["mahayana stage", "great perfection", "limit of the mortal"],
+        "category": "cultivation_realm",
+    },
+    "half_step_immortal": {
+        "terms": ["half-step immortal", "pseudo-immortal", "mortal shedder"],
+        "category": "cultivation_realm",
+    },
+    "earth_immortal": {
+        "terms": ["earth immortal", "land immortal"],
+        "category": "cultivation_realm",
+    },
+    "heavenly_immortal": {
+        "terms": ["heavenly immortal", "celestial immortal"],
+        "category": "cultivation_realm",
+    },
+    "mystic_immortal": {
+        "terms": ["mystic immortal", "profound immortal"],
+        "category": "cultivation_realm",
+    },
+    "golden_immortal": {
+        "terms": ["golden immortal", "da luo golden immortal", "immortal lord"],
+        "category": "cultivation_realm",
+    },
+    "immortal_king": {
+        "terms": ["immortal king", "immortal monarch", "immortal venerable"],
+        "category": "cultivation_realm",
+    },
+    "immortal_emperor": {
+        "terms": ["immortal emperor", "sovereign", "supreme immortal"],
+        "category": "cultivation_realm",
+    },
+    "demigod": {
+        "terms": ["demigod", "false god", "quasi-god"],
+        "category": "cultivation_realm",
+    },
+    "god_realm": {
+        "terms": ["godhood", "divine realm", "true god", "god king"],
+        "category": "cultivation_realm",
+    },
+    "world_creator": {
+        "terms": ["world creator", "creation realm", "world tree stage"],
+        "category": "cultivation_realm",
+    },
+    "law_comprehension": {
+        "terms": ["law stage", "rule comprehension", "origin of laws"],
+        "category": "cultivation_realm",
+    },
+    "dao_ancestor": {
+        "terms": ["dao ancestor", "progenitor", "source realm"],
+        "category": "cultivation_realm",
+    },
+    "transcendence": {
+        "terms": ["transcendence", "eternal realm", "beyond the dao", "unfettered"],
+        "category": "cultivation_realm",
     },
 
     # --------------------------------------------------
-    # System / Game Elements
+    # Sects, inheritance & cultivation society
     # --------------------------------------------------
-    "system_awakening": {
-        "terms": ["system", "status window", "status screen", "game system", "awakening system"],
-        "category": "system",
+    "sect": {
+        "terms": ["cultivation sect", "inner sect", "outer sect"],
+        "category": "cultivation_society",
     },
-    "level_up": {
-        "terms": ["level up", "leveled up", "leveling", "level increase", "gained a level"],
-        "category": "system",
+    "elder": {
+        "terms": ["sect elder", "great elder"],
+        "category": "cultivation_society",
     },
-    "skill_acquisition": {
-        "terms": ["skill acquired", "new skill", "skill unlocked", "learned skill", "skill gained"],
-        "category": "system",
+    "sect_master": {
+        "terms": ["sect master", "sect leader"],
+        "category": "cultivation_society",
     },
-    "quest": {
-        "terms": ["quest", "mission", "task assigned", "objective"],
-        "category": "system",
+    "inheritance": {
+        "terms": ["ancient inheritance", "inheritance ground", "immortal inheritance"],
+        "category": "cultivation_society",
+    },
+    "sect_disciples": {
+        "terms": ["outer disciple", "inner disciple", "core disciple", "legacy disciple", "true disciple",
+                  "closed-door disciple"],
+        "category": "cultivation_society",
+    },
+    "sect_leadership": {
+        "terms": ["sect master", "sect leader", "patriarch", "palace master", "valley master"],
+        "category": "cultivation_society",
+    },
+    "hidden_powerhouses": {
+        "terms": ["grand elder", "supreme elder", "founding ancestor", "venerable", "supreme being"],
+        "category": "cultivation_society",
+    },
+    "alchemy_guild": {
+        "terms": ["alchemist guild", "pill pavilion", "medicine hall", "alchemist", "grandmaster alchemist"],
+        "category": "cultivation_society",
+    },
+    "merchant_unions": {
+        "terms": ["treasure pavilion"],
+        "category": "cultivation_society",
+    },
+    "specialized_professions": {
+        "terms": ["array master", "talisman master", "artifact refiner"],
+        "category": "cultivation_society",
+    },
+    "cultivation_clan": {
+        "terms": ["ancient clan"],
+        "category": "cultivation_society",
+    },
+    "inheritance_sites": {
+        "terms": ["ancient ruin", "secret realm", "inheritance ground", "immortal cave"],
+        "category": "cultivation_society",
+    },
+    "legacy_items": {
+        "terms": ["jade slip", "merit manual", "cultivation technique", "divine art"],
+        "category": "cultivation_society",
+    },
+    "sect_events": {
+        "terms": ["sect competition", "grand assembly", "disciple recruitment", "inner sect trial", "heavenly ranking"],
+        "category": "cultivation_society",
+    },
+    "factions": {
+        "terms": ["righteous path", "demonic path", "heretic sect", "neutral faction", "rogue cultivator"],
+        "category": "cultivation_society",
+    },
+# --------------------------------------------------
+    # Gender & Social Indicators (Tags: Male/Female Protag, Loli, Yaoi/Yuri)
+    # --------------------------------------------------
+    "male_honorifics": {
+        "terms": ["young master", "senior brother", "junior brother", "sect brother", "patriarch", "fellow daoist", "mister"],
+        "category": "gender_indicator_male",
+    },
+    "female_honorifics": {
+        "terms": ["fairy", "jade beauty", "senior sister", "junior sister", "sect sister", "matriarch", "lady", "madam"],
+        "category": "gender_indicator_female",
+    },
+    "loli_signals": {
+        "terms": ["little girl", "petite", "child-like", "younger sister", "small stature"],
+        "category": "age_indicator_young",
     },
 
     # --------------------------------------------------
-    # Cultivation / Power Events
+    # Origin & Meta (Tags: Transmigration, Reincarnation, Regression)
     # --------------------------------------------------
-    "cultivation": {
-        "terms": ["cultivation", "cultivate", "cultivating", "cultivator"],
-        "category": "cultivation",
+    "modern_world_signals": {
+        "terms": ["earth", "modern", "internet", "smartphone", "computer", "truck", "office worker", "high school student", "21st century", "science", "technology"],
+        "category": "origin_modern",
     },
-    "breakthrough": {
-        "terms": ["breakthrough", "break through", "broke through", "advancement", "realm advancement"],
-        "category": "cultivation",
+    "transmigration_events": {
+        "terms": ["transmigrated", "isekai", "original owner", "possessing the body", "this body", "another world", "summoned"],
+        "category": "origin_event",
     },
-    "enlightenment": {
-        "terms": ["enlightenment", "enlightened", "comprehension", "insight", "epiphany"],
-        "category": "cultivation",
+    "reincarnation_events": {
+        "terms": ["reincarnated", "reborn", "previous life", "past life", "baby", "infant", "crying", "born again"],
+        "category": "origin_event",
     },
-    "tribulation": {
-        "terms": ["tribulation", "heavenly tribulation", "lightning tribulation", "thunder tribulation"],
-        "category": "cultivation",
+    "regression_events": {
+        "terms": ["regressed", "returned to the past", "second chance", "start over", "reversing time", "back in time"],
+        "category": "origin_event",
     },
 
     # --------------------------------------------------
-    # Conflict / Combat Events
+    # Power Systems (Genres: Wuxia vs Xianxia vs Xuanhuan)
     # --------------------------------------------------
-    "battle": {
-        "terms": ["battle", "combat", "fight", "fighting", "fought", "clash"],
-        "category": "conflict",
+    "wuxia_specific": {
+        "terms": ["jianghu", "martial forest", "lightfoot", "internal force", "meridians", "pressure points", "qinggong"],
+        "category": "power_system_wuxia",
     },
-    "death": {
-        "terms": ["death", "died", "killed", "slain", "perished", "fallen"],
-        "category": "conflict",
+    "xuanhuan_western_magic": {
+        "terms": ["mana", "magic circle", "spell", "wizard", "mage", "knight", "dragon", "griffon", "staff", "chanting"],
+        "category": "power_system_western",
     },
-    "revenge": {
-        "terms": ["revenge", "vengeance", "avenge", "avenged", "retribution"],
-        "category": "conflict",
-    },
-    "betrayal": {
-        "terms": ["betrayal", "betrayed", "betrayer", "treachery", "backstab"],
-        "category": "conflict",
+    "game_system_signals": {
+        "terms": ["status window", "level up", "experience points", "skill points", "quest", "inventory", "attributes", "strength stat"],
+        "category": "power_system_game",
     },
 
     # --------------------------------------------------
-    # Discovery / Acquisition Events
+    # Species & Transformation (Tags: Race Change, Shapeshifter, Mythical Beast)
     # --------------------------------------------------
-    "treasure": {
-        "terms": ["treasure", "artifact", "relic", "inheritance", "legacy"],
-        "category": "discovery",
+    "beast_transformation": {
+        "terms": ["transformed", "shifted", "beast form", "scales", "claws", "wings", "bloodline awakening", "fur", "tail"],
+        "category": "morphology_change",
     },
-    "secret": {
-        "terms": ["secret", "hidden", "concealed", "mystery", "mysterious"],
-        "category": "discovery",
-    },
-    "awakening": {
-        "terms": ["awakening", "awakened", "awaken", "dormant power"],
-        "category": "discovery",
+    "multiple_bodies": {
+        "terms": ["clone", "avatar", "external body", "doppelganger", "split soul", "projection"],
+        "category": "body_state",
     },
 
     # --------------------------------------------------
-    # World Events
+    # Social & Romance (Genres: Harem, Yaoi, Yuri | Tags: Marriage, Pregnancy)
     # --------------------------------------------------
-    "apocalypse": {
-        "terms": ["apocalypse", "apocalyptic", "end of the world", "cataclysm", "catastrophe"],
-        "category": "world_event",
+    "romance_events": {
+        "terms": ["confession", "first kiss", "affection", "blushing", "beloved", "engagement", "proposal"],
+        "category": "social_romance",
     },
-    "war": {
-        "terms": ["war", "warfare", "invasion", "conquest", "siege"],
-        "category": "world_event",
+    "marriage_events": {
+        "terms": ["wedding", "marriage", "bride", "groom", "vows", "concubine", "consort", "wife", "husband"],
+        "category": "social_marriage",
     },
-    "tournament": {
-        "terms": ["tournament", "competition", "contest", "championship", "arena"],
-        "category": "world_event",
+    "family_events": {
+        "terms": ["pregnant", "pregnancy", "childbirth", "baby", "son", "daughter", "heir"],
+        "category": "social_family",
+    },
+    "harem_rivalry": {
+        "terms": ["jealousy", "inner palace", "rivalry", "favor", "monopolize"],
+        "category": "social_harem",
     },
 
     # --------------------------------------------------
-    # Transformation Events
+    # Adult Content & Action
     # --------------------------------------------------
-    "transformation": {
-        "terms": ["transformation", "transformed", "transform", "metamorphosis", "evolution"],
-        "category": "transformation",
+    "adult_content": {
+        "terms": ["dual cultivation", "bedroom", "naked", "intimacy", "moan", "passion", "heat", "arousal"],
+        "category": "adult_signal",
     },
-    "possession": {
-        "terms": ["possession", "possessed", "possess", "body takeover", "soul possession"],
-        "category": "transformation",
+    "action_violence": {
+        "terms": ["blood", "slaughter", "chaos", "explosion", "battle", "war", "killing", "deadly", "mutilation"],
+        "category": "action_signal",
     },
-    "resurrection": {
-        "terms": ["resurrection", "resurrected", "brought back", "revived", "revival"],
-        "category": "transformation",
+
+    # --------------------------------------------------
+    # World Settings (Tags: Ancient China, Fantasy World, Interdimensional)
+    # --------------------------------------------------
+    "ancient_china_setting": {
+        "terms": ["forbidden city", "imperial palace", "dynasty", "official", "eunuch", "emperor", "courtyard", "tea house"],
+        "category": "setting_ancient_china",
     },
+    "interdimensional": {
+        "terms": ["parallel world", "alternate dimension", "rift", "portal", "void", "multiverse"],
+        "category": "setting_travel",
+    }
 }

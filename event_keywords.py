@@ -660,30 +660,58 @@ def list_keywords_by_category(category: str) -> list[tuple[str, list[str]]]:
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
+    import argparse
     
-    if len(sys.argv) < 2:
-        print("Usage: python event_keywords.py <novel_name> [run_id]")
-        print("\nScans condensed novel for event-related keyword signals.")
-        print("\nExample:")
-        print('  python event_keywords.py "Heaven Reincarnation"')
-        print('  python event_keywords.py "Heaven Reincarnation" "my_run_id"')
-        print("\nDictionary Info:")
-        info = get_dictionary_info()
-        print(f"  Version: {info['version']}")
-        print(f"  Keywords: {info['total_keywords']}")
-        print(f"  Terms: {info['total_terms']}")
-        print(f"  Categories: {list(info['categories'].keys())}")
-        print("\nThis extracts LEXICAL SIGNALS, not event confirmations.")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Generate event keyword surface map (Tier-3.3)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s "Heaven Reincarnation"
+  %(prog)s "Heaven Reincarnation" --run-id my_run_id
+  %(prog)s "Heaven Reincarnation" --prefer-raw
+
+By default, uses condensed chapters. Use --prefer-raw for raw chapters.
+This extracts LEXICAL SIGNALS, not event confirmations.
+        """,
+    )
+    parser.add_argument(
+        "novel_name",
+        help="Name of the novel",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="standalone_keywords",
+        help="Run ID for this execution (default: standalone_keywords)",
+    )
+    parser.add_argument(
+        "--prefer-raw",
+        action="store_true",
+        help="Use raw chapters instead of condensed chapters",
+    )
     
-    novel_name = sys.argv[1]
-    run_id = sys.argv[2] if len(sys.argv) > 2 else "standalone_keywords"
+    args = parser.parse_args()
     
-    output_path = generate_event_keyword_map(novel_name, run_id)
+    # Print dictionary info
+    info = get_dictionary_info()
+    print(f"Dictionary Info:")
+    print(f"  Version: {info['version']}")
+    print(f"  Keywords: {info['total_keywords']}")
+    print(f"  Terms: {info['total_terms']}")
+    print(f"  Categories: {list(info['categories'].keys())}")
+    
+    # Determine source directory based on --prefer-raw flag
+    source_dir = RAW_CHAPTERS_DIR if args.prefer_raw else None
+    
+    output_path = generate_event_keyword_map(
+        args.novel_name,
+        args.run_id,
+        source_dir=source_dir,
+    )
     
     if output_path:
         print(f"\n✓ Event keyword map generated: {output_path}")
     else:
         print("\n✗ Event keyword map generation failed")
+        import sys
         sys.exit(1)

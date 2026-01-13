@@ -743,22 +743,49 @@ def generate_character_index(
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
+    import argparse
     
-    if len(sys.argv) < 2:
-        print("Usage: python character_indexing.py <novel_name> [run_id]")
-        print("\nExample:")
-        print('  python character_indexing.py "Heaven Reincarnation"')
-        print('  python character_indexing.py "Heaven Reincarnation" "test_run_001"')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Generate character surface index (Tier-2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s "Heaven Reincarnation"
+  %(prog)s "Heaven Reincarnation" --run-id test_run_001
+  %(prog)s "Heaven Reincarnation" --prefer-raw
+
+By default, uses condensed chapters. Use --prefer-raw for raw chapters.
+        """,
+    )
+    parser.add_argument(
+        "novel_name",
+        help="Name of the novel",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="standalone_test",
+        help="Run ID for this execution (default: standalone_test)",
+    )
+    parser.add_argument(
+        "--prefer-raw",
+        action="store_true",
+        help="Use raw chapters instead of condensed chapters",
+    )
     
-    novel_name = sys.argv[1]
-    run_id = sys.argv[2] if len(sys.argv) > 2 else "standalone_test"
+    args = parser.parse_args()
     
-    output_path = generate_character_index(novel_name, run_id)
+    # Determine source directory based on --prefer-raw flag
+    source_dir = RAW_CHAPTERS_DIR if args.prefer_raw else None
+    
+    output_path = generate_character_index(
+        args.novel_name,
+        args.run_id,
+        source_dir=source_dir,
+    )
     
     if output_path:
         print(f"\n✓ Character index generated: {output_path}")
     else:
         print("\n✗ Character index generation failed")
+        import sys
         sys.exit(1)

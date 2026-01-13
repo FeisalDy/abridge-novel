@@ -1,4 +1,7 @@
 """
+Update: 2026-01-13, This script is not up to date with the latest codebase, to use it, the developer need to update
+the code to match the update is stage 3.3.5 and downstream
+
 Abridge Pipeline Orchestrator
 
 Runs the full condensation pipeline in order:

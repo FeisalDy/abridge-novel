@@ -153,6 +153,11 @@ GENRE_RESOLVED_DIR = os.getenv(
     "data/genre_resolved"
 )
 
+CHARACTER_PROFILES_DIR = os.getenv(
+    "ABRIDGE_CHARACTER_PROFILES_DIR",
+    "data/character_profiles"
+)
+
 # Minimum confidence threshold for tag inclusion in output
 # Conservative: only report tags with meaningful evidence
 CONFIDENCE_THRESHOLD = 0.3
@@ -330,6 +335,40 @@ def _load_genre_resolved(novel_name: str, run_id: str) -> Optional[dict]:
     return None
 
 
+def _load_character_profiles(novel_name: str, run_id: str) -> Optional[dict]:
+    """
+    Load character profiles artifact (Tier-3.3.5) for the given run.
+    
+    Character profiles provide pre-computed character state information
+    that can be used for more accurate tag resolution.
+    """
+    artifact_path = os.path.join(
+        CHARACTER_PROFILES_DIR,
+        novel_name,
+        f"{run_id}.character_profiles.json"
+    )
+
+    if os.path.exists(artifact_path):
+        with open(artifact_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    # Fallback: find most recent artifact
+    novel_dir = os.path.join(CHARACTER_PROFILES_DIR, novel_name)
+    if not os.path.exists(novel_dir):
+        return None
+
+    artifacts = sorted([
+        f for f in os.listdir(novel_dir)
+        if f.endswith(".character_profiles.json")
+    ], reverse=True)
+
+    if artifacts:
+        with open(os.path.join(novel_dir, artifacts[0]), "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    return None
+
+
 # --------------------------------------------------
 # Rule Evaluation Engine
 # --------------------------------------------------
@@ -340,6 +379,13 @@ class TagRuleEngine:
     
     This engine applies explicit rules to extract evidence and compute
     confidence scores. All logic is documented and versioned.
+    
+    Optionally uses Tier-3.3.5 Character Profiles for enhanced resolution:
+    - Profile-based protagonist detection
+    - Profile-based gender detection (Male/Female Protagonist tags)
+    - Profile-based origin detection (Transmigrator/Reincarnator tags)
+    - Profile-based power system detection (Cultivation/Level System tags)
+    - Profile-based relationship detection (Harem tags)
     """
     
     def __init__(
@@ -348,11 +394,13 @@ class TagRuleEngine:
         character_salience: Optional[dict],
         relationship_matrix: Optional[dict],
         genre_resolved: Optional[dict],
+        character_profiles: Optional[dict] = None,
     ):
         self.event_keywords = event_keywords or {}
         self.character_salience = character_salience or {}
         self.relationship_matrix = relationship_matrix or {}
         self.genre_resolved = genre_resolved or {}
+        self.character_profiles = character_profiles or {}
         
         # Pre-extract commonly used data
         self._keywords = self.event_keywords.get("keywords", {})
@@ -360,6 +408,7 @@ class TagRuleEngine:
         self._characters = self.character_salience.get("characters", [])
         self._pairs = self.relationship_matrix.get("pairs", {})
         self._genres = self.genre_resolved.get("genres", {})
+        self._profiles = self.character_profiles.get("profiles", {})
         
         # Build character salience lookup (name -> salience_score)
         # Used for actor-centric validation (Tier-3.4b v1.1.0)
@@ -384,6 +433,45 @@ class TagRuleEngine:
                     self._character_max_persistence.get(char_b, 0.0),
                     persistence
                 )
+        
+        # --------------------------------------------------
+        # Profile-Based Lookups (Tier-3.3.5)
+        # --------------------------------------------------
+        self._has_profiles = len(self._profiles) > 0
+        
+        # Pre-compute profile aggregates for tag detection
+        self._protagonist_profiles = [
+            p for p in self._profiles.values()
+            if p.get("role") == "protagonist"
+        ]
+        self._male_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("identity", {}).get("inferred_gender") == "male"
+        ]
+        self._female_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("identity", {}).get("inferred_gender") == "female"
+        ]
+        self._transmigration_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("origin_state", {}).get("type") in ("transmigration", "reincarnation", "regression")
+        ]
+        self._cultivation_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("progression_style") == "cultivation"
+        ]
+        self._level_based_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("progression_style") == "level-based"
+        ]
+        self._harem_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("social", {}).get("harem_type") in ("protagonist_harem", "reverse_harem")
+        ]
+        self._immortal_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("attained_immortality", False)
+        ]
     
     # --------------------------------------------------
     # Actor-Centric Methods (Tier-3.4b v1.1.0)
@@ -634,6 +722,72 @@ class TagRuleEngine:
             # Value: threshold (float)
             # Returns True if harem confidence >= threshold (triggers penalty)
             return self._check_harem_penalty(condition_value)
+        
+        # --------------------------------------------------
+        # Profile-Based Condition Types (Tier-3.3.5)
+        # --------------------------------------------------
+        
+        elif condition_type == "profile_protagonist_gender":
+            # Value: "male" or "female"
+            # Check if any protagonist has the specified gender
+            gender = condition_value.lower()
+            if gender == "male":
+                return len(self._male_protagonists) > 0
+            elif gender == "female":
+                return len(self._female_protagonists) > 0
+            return False
+        
+        elif condition_type == "profile_origin_type":
+            # Check protagonist origin type from character profiles
+            origin_types = condition_value if isinstance(condition_value, list) else [condition_value]
+            if not self._has_profiles:
+                return False
+            for profile in self._protagonist_profiles:
+                origin = profile.get("origin_state", {}).get("type", "unknown")
+                if origin in origin_types:
+                    return True
+            return False
+        
+        elif condition_type == "profile_power_system":
+            # Check protagonist power system from character profiles
+            styles = condition_value if isinstance(condition_value, list) else [condition_value]
+            if not self._has_profiles:
+                return False
+            for profile in self._protagonist_profiles:
+                style = profile.get("power_system", {}).get("progression_style", "unknown")
+                if style in styles:
+                    return True
+            return False
+        
+        elif condition_type == "profile_has_harem":
+            # Check if protagonist has harem from character profiles
+            return len(self._harem_protagonists) > 0
+        
+        elif condition_type == "profile_attained_immortality":
+            # Check if protagonist attained immortality from character profiles
+            return len(self._immortal_protagonists) > 0
+        
+        elif condition_type == "profile_energy_type":
+            # Check protagonist energy type from character profiles
+            types = condition_value if isinstance(condition_value, list) else [condition_value]
+            if not self._has_profiles:
+                return False
+            for profile in self._protagonist_profiles:
+                energy = profile.get("power_system", {}).get("energy_type", "unknown")
+                if energy in types:
+                    return True
+            return False
+        
+        elif condition_type == "profile_romantic_cardinality":
+            # Check if any protagonist has romantic_cardinality >= value
+            min_count = condition_value
+            if not self._has_profiles:
+                return False
+            for profile in self._protagonist_profiles:
+                cardinality = profile.get("social", {}).get("romantic_cardinality", 0)
+                if cardinality >= min_count:
+                    return True
+            return False
         
         return False
     
@@ -911,6 +1065,7 @@ def build_tag_resolved_map(
     character_salience: Optional[dict],
     relationship_matrix: Optional[dict],
     genre_resolved: Optional[dict],
+    character_profiles: Optional[dict] = None,
 ) -> TagResolvedMap:
     """
     Build the tag resolution map from Tier-3 artifacts.
@@ -928,6 +1083,7 @@ def build_tag_resolved_map(
         character_salience: Tier-3.1 salience artifact
         relationship_matrix: Tier-3.2 matrix artifact
         genre_resolved: Tier-3.4a genre resolved artifact
+        character_profiles: Tier-3.3.5 character profiles artifact (optional)
     
     Returns:
         TagResolvedMap with confidence-scored tags
@@ -951,6 +1107,7 @@ def build_tag_resolved_map(
         "character_salience": character_salience is not None,
         "relationship_matrix": relationship_matrix is not None,
         "genre_resolved": genre_resolved is not None,
+        "character_profiles": character_profiles is not None,
     }
     
     # Check if we have minimum required data
@@ -960,12 +1117,16 @@ def build_tag_resolved_map(
     if genre_resolved is None:
         result.warnings.append("No genre resolved data available - some tag rules limited")
     
+    if character_profiles is not None:
+        result.warnings.append("Using Tier-3.3.5 character profiles for enhanced resolution")
+    
     # Initialize rule engine
     engine = TagRuleEngine(
         event_keywords=event_keywords,
         character_salience=character_salience,
         relationship_matrix=relationship_matrix,
         genre_resolved=genre_resolved,
+        character_profiles=character_profiles,
     )
     
     # Evaluate all tags
@@ -1015,8 +1176,8 @@ def generate_tag_resolved(
     """
     Main pipeline entry point for tag resolution.
     
-    Loads Tier-3 artifacts, computes tag confidence scores,
-    and persists the result.
+    Loads Tier-3 artifacts (including Tier-3.3.5 character profiles),
+    computes tag confidence scores, and persists the result.
     
     Args:
         novel_name: Name of the novel
@@ -1035,6 +1196,7 @@ def generate_tag_resolved(
     character_salience = _load_character_salience(novel_name, run_id)
     relationship_matrix = _load_relationship_matrix(novel_name, run_id)
     genre_resolved = _load_genre_resolved(novel_name, run_id)
+    character_profiles = _load_character_profiles(novel_name, run_id)
     
     # Log artifact status
     if event_keywords:
@@ -1057,6 +1219,11 @@ def generate_tag_resolved(
     else:
         print(f"[Tag Resolver] WARNING: No genre resolved artifact found")
     
+    if character_profiles:
+        print(f"[Tag Resolver] Loaded character profiles (Tier-3.3.5): {character_profiles.get('total_characters_profiled', 0)} profiles")
+    else:
+        print(f"[Tag Resolver] INFO: No character profiles artifact found (using keyword-only detection)")
+    
     # Build tag resolution
     result = build_tag_resolved_map(
         novel_name=novel_name,
@@ -1065,6 +1232,7 @@ def generate_tag_resolved(
         character_salience=character_salience,
         relationship_matrix=relationship_matrix,
         genre_resolved=genre_resolved,
+        character_profiles=character_profiles,
     )
     
     # Report results

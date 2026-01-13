@@ -103,6 +103,7 @@ from character_indexing import generate_character_index
 from character_salience import generate_salience_index
 from relationship_matrix import generate_relationship_matrix
 from event_keywords import generate_event_keyword_map
+from character_profiler import generate_character_profiles
 from genre_resolver import generate_genre_resolved
 from tag_resolver import generate_tag_resolved
 from llm.llm_config import LLM_PROVIDER
@@ -167,6 +168,7 @@ class AnalysisFlags:
     skip_salience: bool = False
     skip_relationships: bool = False
     skip_event_keywords: bool = False
+    skip_character_profiles: bool = False
     skip_genre_resolver: bool = False
     skip_tag_resolver: bool = False
     
@@ -395,6 +397,7 @@ def run_analysis_pipeline(
             ("Tier-3.1: Character Salience", not flags.skip_salience),
             ("Tier-3.2: Relationship Matrix", not flags.skip_relationships),
             ("Tier-3.3: Event Keywords", not flags.skip_event_keywords),
+            ("Tier-3.3.5: Character Profiles", not flags.skip_character_profiles),
             ("Tier-3.4a: Genre Resolver", not flags.skip_genre_resolver),
             ("Tier-3.4b: Tag Resolver", not flags.skip_tag_resolver),
         ]
@@ -460,6 +463,15 @@ def run_analysis_pipeline(
                 run_id=run_id,
                 source_dir=base_source_dir,
             )
+        
+        # --------------------------------------------------
+        # Tier-3.3.5: Character State Profiler
+        # --------------------------------------------------
+        if not flags.skip_character_profiles:
+            print("\n" + "=" * 50)
+            print("[Pipeline] Tier-3.3.5: Character State Profiler")
+            print("=" * 50)
+            generate_character_profiles(novel_name, run_id)
         
         # --------------------------------------------------
         # Tier-3.4a: Genre Resolver
@@ -632,6 +644,11 @@ Examples:
         help="Skip Tier-3.3 event keyword scanning",
     )
     analysis_group.add_argument(
+        "--skip-character-profiles",
+        action="store_true",
+        help="Skip Tier-3.3.5 character state profiling",
+    )
+    analysis_group.add_argument(
         "--skip-genre-resolver",
         action="store_true",
         help="Skip Tier-3.4a genre resolution",
@@ -673,6 +690,7 @@ if __name__ == "__main__":
         skip_salience=args.skip_salience,
         skip_relationships=args.skip_relationships,
         skip_event_keywords=args.skip_event_keywords,
+        skip_character_profiles=args.skip_character_profiles,
         skip_genre_resolver=args.skip_genre_resolver,
         skip_tag_resolver=args.skip_tag_resolver,
         with_chapters=args.with_chapters,

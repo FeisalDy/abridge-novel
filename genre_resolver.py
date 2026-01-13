@@ -141,6 +141,11 @@ EVENT_KEYWORDS_DIR = os.getenv(
     "data/event_keywords"
 )
 
+CHARACTER_PROFILES_DIR = os.getenv(
+    "ABRIDGE_CHARACTER_PROFILES_DIR",
+    "data/character_profiles"
+)
+
 # Minimum confidence threshold for genre inclusion in output
 # Conservative: only report genres with meaningful evidence
 CONFIDENCE_THRESHOLD = 0.3
@@ -285,6 +290,40 @@ def _load_relationship_matrix(novel_name: str, run_id: str) -> Optional[dict]:
     return None
 
 
+def _load_character_profiles(novel_name: str, run_id: str) -> Optional[dict]:
+    """
+    Load character profiles artifact (Tier-3.3.5) for the given run.
+    
+    Character profiles provide pre-computed character state information
+    that can be used for more accurate genre/tag resolution.
+    """
+    artifact_path = os.path.join(
+        CHARACTER_PROFILES_DIR,
+        novel_name,
+        f"{run_id}.character_profiles.json"
+    )
+
+    if os.path.exists(artifact_path):
+        with open(artifact_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    # Fallback: find most recent artifact
+    novel_dir = os.path.join(CHARACTER_PROFILES_DIR, novel_name)
+    if not os.path.exists(novel_dir):
+        return None
+
+    artifacts = sorted([
+        f for f in os.listdir(novel_dir)
+        if f.endswith(".character_profiles.json")
+    ], reverse=True)
+
+    if artifacts:
+        with open(os.path.join(novel_dir, artifacts[0]), "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    return None
+
+
 # --------------------------------------------------
 # Rule Evaluation Engine
 # --------------------------------------------------
@@ -295,6 +334,11 @@ class GenreRuleEngine:
     
     This engine applies explicit rules to extract evidence and compute
     confidence scores. All logic is documented and versioned.
+    
+    Optionally uses Tier-3.3.5 Character Profiles for enhanced resolution:
+    - Profile-based origin detection (transmigration/reincarnation)
+    - Profile-based power system detection (cultivation/level-based)
+    - Profile-based social detection (harem types)
     """
 
     def __init__(
@@ -302,22 +346,54 @@ class GenreRuleEngine:
             event_keywords: Optional[dict],
             character_salience: Optional[dict],
             relationship_matrix: Optional[dict],
+            character_profiles: Optional[dict] = None,
     ):
         self.event_keywords = event_keywords or {}
         self.character_salience = character_salience or {}
         self.relationship_matrix = relationship_matrix or {}
+        self.character_profiles = character_profiles or {}
 
         # Pre-extract commonly used data
         self._keywords = self.event_keywords.get("keywords", {})
         self._categories = self.event_keywords.get("categories_found", {})
         self._characters = self.character_salience.get("characters", [])
         self._pairs = self.relationship_matrix.get("pairs", {})
+        self._profiles = self.character_profiles.get("profiles", {})
         
         # Build character salience lookup (name -> salience_score)
         self._character_salience_map = {
             c.get("name"): c.get("salience_score", 0.0)
             for c in self._characters
         }
+        
+        # Build profile-based lookups for quick access
+        self._has_profiles = len(self._profiles) > 0
+        
+        # Pre-compute profile aggregates for genre detection
+        self._protagonist_profiles = [
+            p for p in self._profiles.values()
+            if p.get("role") == "protagonist"
+        ]
+        self._transmigration_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("origin_state", {}).get("type") in ("transmigration", "reincarnation", "regression")
+        ]
+        self._cultivation_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("progression_style") == "cultivation"
+        ]
+        self._level_based_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("progression_style") == "level-based"
+        ]
+        self._harem_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("social", {}).get("harem_type") in ("protagonist_harem", "reverse_harem")
+        ]
+        self._immortal_protagonists = [
+            p for p in self._protagonist_profiles
+            if p.get("power_system", {}).get("attained_immortality", False)
+        ]
 
     def _check_keyword_present(self, keyword_id: str) -> bool:
         """Check if a keyword exists in the event keywords data."""
@@ -440,6 +516,78 @@ class GenreRuleEngine:
         validating_actors.sort(key=lambda x: -x[1])
         return validating_actors
 
+    # --------------------------------------------------
+    # Profile-Based Condition Checks (Tier-3.3.5)
+    # --------------------------------------------------
+
+    def _check_profile_origin_type(self, origin_types: list) -> bool:
+        """
+        Check if any protagonist has origin_type in the given list.
+        
+        Uses Tier-3.3.5 character profiles for accurate origin detection.
+        Falls back to keyword-based detection if profiles unavailable.
+        """
+        if not self._has_profiles:
+            return False
+        
+        for profile in self._protagonist_profiles:
+            origin = profile.get("origin_state", {}).get("type", "unknown")
+            if origin in origin_types:
+                return True
+        return False
+
+    def _check_profile_power_system(self, progression_styles: list) -> bool:
+        """
+        Check if any protagonist uses a power system in the given list.
+        
+        Uses Tier-3.3.5 character profiles for accurate power system detection.
+        """
+        if not self._has_profiles:
+            return False
+        
+        for profile in self._protagonist_profiles:
+            style = profile.get("power_system", {}).get("progression_style", "unknown")
+            if style in progression_styles:
+                return True
+        return False
+
+    def _check_profile_has_harem(self) -> bool:
+        """
+        Check if any protagonist has a harem relationship pattern.
+        
+        Uses Tier-3.3.5 character profiles for accurate harem detection.
+        """
+        if not self._has_profiles:
+            return False
+        
+        return len(self._harem_protagonists) > 0
+
+    def _check_profile_attained_immortality(self) -> bool:
+        """
+        Check if any protagonist has attained immortality.
+        
+        Uses Tier-3.3.5 character profiles for accurate immortality detection.
+        """
+        if not self._has_profiles:
+            return False
+        
+        return len(self._immortal_protagonists) > 0
+
+    def _check_profile_energy_type(self, energy_types: list) -> bool:
+        """
+        Check if any protagonist uses an energy type in the given list.
+        
+        Uses Tier-3.3.5 character profiles.
+        """
+        if not self._has_profiles:
+            return False
+        
+        for profile in self._protagonist_profiles:
+            energy = profile.get("power_system", {}).get("energy_type", "unknown")
+            if energy in energy_types:
+                return True
+        return False
+
     def _check_condition(self, condition_type: str, condition_value) -> bool:
         """Evaluate a single condition."""
         if condition_type == "keyword_present":
@@ -480,6 +628,33 @@ class GenreRuleEngine:
         elif condition_type == "high_persistence_pair_count":
             min_count, min_persistence = condition_value
             return self._check_high_persistence_pair_count(min_count, min_persistence)
+
+        # --------------------------------------------------
+        # Profile-Based Conditions (Tier-3.3.5)
+        # --------------------------------------------------
+        
+        elif condition_type == "profile_origin_type":
+            # Check protagonist origin type from character profiles
+            origin_types = condition_value if isinstance(condition_value, list) else [condition_value]
+            return self._check_profile_origin_type(origin_types)
+        
+        elif condition_type == "profile_power_system":
+            # Check protagonist power system from character profiles
+            styles = condition_value if isinstance(condition_value, list) else [condition_value]
+            return self._check_profile_power_system(styles)
+        
+        elif condition_type == "profile_has_harem":
+            # Check if protagonist has harem from character profiles
+            return self._check_profile_has_harem()
+        
+        elif condition_type == "profile_attained_immortality":
+            # Check if protagonist attained immortality from character profiles
+            return self._check_profile_attained_immortality()
+        
+        elif condition_type == "profile_energy_type":
+            # Check protagonist energy type from character profiles
+            types = condition_value if isinstance(condition_value, list) else [condition_value]
+            return self._check_profile_energy_type(types)
 
         return False
 
@@ -687,6 +862,7 @@ def build_genre_resolved_map(
         event_keywords: Optional[dict],
         character_salience: Optional[dict],
         relationship_matrix: Optional[dict],
+        character_profiles: Optional[dict] = None,
 ) -> GenreResolvedMap:
     """
     Build the genre resolution map from Tier-3 artifacts.
@@ -703,6 +879,7 @@ def build_genre_resolved_map(
         event_keywords: Tier-3.3 event keywords artifact
         character_salience: Tier-3.1 salience artifact
         relationship_matrix: Tier-3.2 matrix artifact
+        character_profiles: Tier-3.3.5 character profiles artifact (optional)
     
     Returns:
         GenreResolvedMap with confidence-scored genres
@@ -724,17 +901,22 @@ def build_genre_resolved_map(
         "event_keywords": event_keywords is not None,
         "character_salience": character_salience is not None,
         "relationship_matrix": relationship_matrix is not None,
+        "character_profiles": character_profiles is not None,
     }
 
     # Check if we have minimum required data
     if event_keywords is None:
         result.warnings.append("No event keywords data available - genre resolution limited")
+    
+    if character_profiles is not None:
+        result.warnings.append("Using Tier-3.3.5 character profiles for enhanced resolution")
 
     # Initialize rule engine
     engine = GenreRuleEngine(
         event_keywords=event_keywords,
         character_salience=character_salience,
         relationship_matrix=relationship_matrix,
+        character_profiles=character_profiles,
     )
 
     # Evaluate all genres
@@ -781,8 +963,8 @@ def generate_genre_resolved(
     """
     Main pipeline entry point for genre resolution.
     
-    Loads Tier-3 artifacts, computes genre confidence scores,
-    and persists the result.
+    Loads Tier-3 artifacts (including Tier-3.3.5 character profiles),
+    computes genre confidence scores, and persists the result.
     
     Args:
         novel_name: Name of the novel
@@ -800,6 +982,7 @@ def generate_genre_resolved(
     event_keywords = _load_event_keywords(novel_name, run_id)
     character_salience = _load_character_salience(novel_name, run_id)
     relationship_matrix = _load_relationship_matrix(novel_name, run_id)
+    character_profiles = _load_character_profiles(novel_name, run_id)
 
     # Log artifact status
     if event_keywords:
@@ -817,6 +1000,11 @@ def generate_genre_resolved(
     else:
         print(f"[Genre Resolver] WARNING: No relationship matrix artifact found")
 
+    if character_profiles:
+        print(f"[Genre Resolver] Loaded character profiles (Tier-3.3.5): {character_profiles.get('total_characters_profiled', 0)} profiles")
+    else:
+        print(f"[Genre Resolver] INFO: No character profiles artifact found (using keyword-only detection)")
+
     # Build genre resolution
     result = build_genre_resolved_map(
         novel_name=novel_name,
@@ -824,6 +1012,7 @@ def generate_genre_resolved(
         event_keywords=event_keywords,
         character_salience=character_salience,
         relationship_matrix=relationship_matrix,
+        character_profiles=character_profiles,
     )
 
     # Report results

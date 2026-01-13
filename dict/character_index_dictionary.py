@@ -137,7 +137,17 @@ DISCOURSE_WORDS = frozenset({
     "Feeling", "Sure", "Listening", "Tell", "Unconsciously", "Witnessing", "Want", "Walking", "Subconsciously", "Sitting",
     "Returning", "Report", "Pass", "Other", "Observe", "Name", "Listen", "Less", "Internet",
     "Humph", "Densely", "Choose", "Behind", "Authority", "Anyone", "Ahhhhh", "Would", "Prevent", "Refining",
-    "Revealing", "Knowing", "Holding", "Find"
+    "Revealing", "Knowing", "Holding", "Find", "About", "Actually", "Ahem", "Another", "Apart", "Arriving",
+    "Back", "Besides", "Boring", "Brush", "Caught", "Click", "Coming", "Cooperation", "Cough", "Definitely",
+    "Despite", "Differently", "Does", "Early", "Ever", "Except", "Excuse", "Familiar", "Follow",
+    "Found", "Friends", "Fuck", "Give", "Going", "Guess", "Haha", "Hahahaha", "Hehe", "Hehehe", "Hello",
+    "Here", "Hiss", "Hmph", "Hold", "Hurry", "Impossible", "Interesting", "Interrogation", "Keep", "Leave",
+    "Leaving", "Look", "Meeting", "Morning", "Nonsense", "Normally", "Oops", "Others", "Outside", "People",
+    "Phew", "Probably", "Quick", "Quickly", "Realizing", "Really", "Regardless", "Remember", "Rescue",
+    "Return", "Right", "Send", "Shall", "Should", "Shouldn", "Sighing", "Somewhere", "Sorry", "Speaking",
+    "Squeak", "Stop", "Sunlight", "Thanks", "Turning", "Understood", "Unfortunately", "Unlike", "Very",
+    "Visiting", "Welcome", "Well", "Whatever", "Whouldn", "Yeah", "Didn", "Different", "Directly", "Doesn",
+    "Ouch",
 })
 
 
@@ -145,7 +155,7 @@ EXCLUDED_WORDS = frozenset({
     # ── Articles / Determiners ─────────────────────────────
     "The", "A", "An", "This", "That", "These", "Those",
     "Each", "Every", "Either", "Neither", "Some", "Any",
-    "All", "Both", "Few", "Many", "Several", "Most",
+    "All", "Both", "Few", "Many", "Several", "Most", "As",
 
     # ── Pronouns / Possessives ─────────────────────────────
     "I", "You", "He", "She", "It", "We", "They",
@@ -220,5 +230,10 @@ EXCLUDED_WORDS = frozenset({
     "Time", "Little", "Song", "Secret", "Void", "Space",
     "Cosmos", "Universe", "World", "Life", "Death", "Earth",
     "Transform", "Human", "Faced", "Destiny", "Virtual", "Transforming",
-    "Things", "Tenacity",
+    "Things", "Tenacity", "Alas", "Annihilation", "Believe", "Call", "Cold",
+    "Countless", "Crash", "Creation", "Damn", "Dang", "Deputy", "Fifteen", "Fifty",
+    "Forest", "Gate", "Half", "Illusion", "Karma", "Kill", "Knowledge", "Magic", "Netherworld",
+    "Ordinary", "Pope", "President", "Revelation", "Saint", "Seeing", "Seventh", "Sister", "Sixteen",
+    "Staff", "Steel", "Tower", "Venom", "Warcraft", "Witch", "Crusaders", "Goddess", "Grandpa", "Paladin",
+    "Seventeen",
 })
